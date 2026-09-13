@@ -4,12 +4,14 @@ X Feed Intelligence is a local-first project for turning user-supplied X/Twitter
 
 ## Status
 
-**Research Gate 0.** No authenticated browser collector, automated scrolling, social interaction, or production release has been implemented.
+**Research Gate 0 is complete on the research branch and awaits review.** No collector, analyzer, authenticated browser test, automated scrolling, social interaction, dependency installation, or production release has been implemented.
 
-The first production target is a safe local workflow with two inputs:
+The accepted Gate 0 architecture is a local hybrid with two independent inputs and one normalized analysis core:
 
 1. screen recordings supplied by the user; and
-2. a passive browser-extension collector that observes visible posts only while the user browses an explicitly approved X origin.
+2. a conditional passive browser-extension collector that observes visible posts only while the user browses an explicitly approved X origin.
+
+The recording path is the production-safe default. The extension may be implemented and tested only against synthetic local fixtures through Gate 2. A later live X test requires an explicit, user-supervised risk decision; passive extraction may still violate X's Terms and could lead to account enforcement.
 
 The product will classify organic posts, exclude advertisements from the normal count, flag manipulation and prompt injection, identify high-signal information and opportunities, verify consequential claims against primary sources, and recommend accounts worth considering for a follow. It will not automatically like, follow, repost, reply, message, or schedule account activity.
 
@@ -25,6 +27,11 @@ Authenticated X testing requires the user. CAPTCHA, login challenges, rate limit
 - [Roadmap](docs/ROADMAP.md)
 - [Research plan](docs/research/RESEARCH_PLAN.md)
 - [Existing-chat baseline](docs/research/EXISTING_CHAT_BASELINE.md)
+- [Platform and reuse deep dive](docs/research/platform-and-reuse-deep-dive.md)
+- [Reuse, license, maintenance, and security matrix](docs/research/reuse-matrix.md)
+- [X account and policy risk](docs/research/x-account-and-policy-risk.md)
+- [Report methodology](docs/research/report-methodology.md)
+- [Activation, data flow, and synthetic tests](docs/research/activation-data-flow-and-synthetic-tests.md)
 - [Platform ADR](docs/adr/0001-platform-selection.md)
 - [Security policy](SECURITY.md)
 
@@ -35,4 +42,3 @@ Real screen recordings, post text, account identifiers, extracted feeds, analysi
 ## License
 
 Copyright © 2026 Rolando Carreon. All rights reserved. The source is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Commercial use is not licensed. Because of that restriction, any later public repository must be described as source-available rather than OSI-approved open source.
-
