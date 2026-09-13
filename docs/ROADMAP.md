@@ -13,7 +13,7 @@
 
 ## Gate 1 — Threat model, schemas, and evaluation contracts
 
-**Contract set complete on `gate1/contracts-and-synthetic-evidence`; pending review.** The [Gate 1 index](gate1/README.md) maps every exit criterion to its contract and deterministic evidence.
+**Complete and merged to `main` in merge commit `9f961e5`.** The [Gate 1 index](gate1/README.md) maps every exit criterion to its contract and deterministic evidence.
 
 - Define post, author, media, provenance, deduplication, classification, verification, and recommendation schemas.
 - Define prompt-injection and sensitive-data redaction contracts.
@@ -25,7 +25,11 @@ Gate 1 uses only authored synthetic data and standard-library validation. Passin
 
 ## Gate 2 — Production MVP on synthetic and supplied data
 
-**Not started.**
+**In progress on isolated review branches. G2.1 is implemented and awaiting review; G2.2-G2.5 are not started.**
+
+- [x] G2.1: standard-library schema and semantic validation, canonical JSON and SHA-256 handling, deterministic deduplication, versioned SQLite migrations, parameterized transactional persistence, review-decision storage, content-free diagnostics, backup, and purge evidence.
+- [x] G2.1: import both authored synthetic envelopes with exact Gate 1 oracle counts; exercise malformed, deep, oversized, idempotent, rollback, foreign-key, WAL, migration, backup, purge, and no-secret-echo cases in temporary databases.
+- [ ] Review and merge G2.1 before starting G2.2.
 
 - Build local screen-recording ingestion and candidate-frame extraction.
 - Build passive origin-scoped browser capture against synthetic fixtures.

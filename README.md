@@ -4,7 +4,7 @@ X Feed Intelligence is a local-first project for turning user-supplied X/Twitter
 
 ## Status
 
-**Research Gate 0 is merged. Gate 1's contract and deterministic synthetic-evidence set is complete and awaiting review.** No production collector, analyzer, OCR pipeline, database, extension build, authenticated browser test, automated scrolling, social interaction, third-party dependency, or release has been implemented.
+**Research Gate 0 and the reviewed Gate 1 contract set are merged. Gate 2 work package G2.1 now has a local implementation branch awaiting review.** G2.1 adds an offline standard-library validator and SQLite canonical store for the authored synthetic envelopes. No production collector, analyzer, OCR pipeline, extension build, authenticated browser test, automated scrolling, social interaction, third-party dependency, or release has been implemented.
 
 The accepted Gate 0 architecture is a local hybrid with two independent inputs and one normalized analysis core:
 

@@ -22,6 +22,10 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   schemas/v1/observation.schema.json schemas/v1/canonical-post.schema.json \
   schemas/v1/analysis.schema.json schemas/v1/envelope.schema.json \
   schemas/v1/model-handoff.schema.json \
+  src/x_core_store/__init__.py src/x_core_store/canonical.py \
+  src/x_core_store/dedup.py src/x_core_store/exceptions.py \
+  src/x_core_store/migrations.py src/x_core_store/store.py \
+  src/x_core_store/validator.py tests/test_g21_core_store.py \
   fixtures/synthetic/v1/manifest.json fixtures/synthetic/v1/dedup-role-collisions.json \
   tests/gate1_acceptance.py; do
   test -s "$repo_root/$path" || { echo "missing or empty: $path" >&2; exit 1; }
@@ -40,4 +44,5 @@ grep -Fq 'No production version is currently supported' "$repo_root/SECURITY.md"
 grep -Fq 'Required Notice: Copyright © 2026 Rolando Carreon' "$repo_root/NOTICE"
 python3 "$repo_root/tests/check_docs.py"
 python3 "$repo_root/tests/gate1_acceptance.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$repo_root/tests/test_g21_core_store.py"
 echo 'repository policy checks passed'
