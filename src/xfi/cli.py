@@ -11,6 +11,7 @@ from .analysis import aggregate_authors, analyze_posts, build_model_handoff
 from .canonical import pretty_bytes
 from .errors import XFIError
 from .render import atomic_write, private_json, private_markdown, sanitize
+from .recording import ingest as ingest_recording, preflight as preflight_recording
 from .store import Store
 from .validation import load_and_validate_envelope
 
@@ -47,6 +48,15 @@ def run(arguments: list[str] | None = None) -> int:
     handoff.add_argument("--session", required=True)
     handoff.add_argument("--format", choices=("classification", "summary", "verification_plan", "recommendation"), required=True)
     handoff.add_argument("--output", type=Path, required=True)
+    recording_preflight = sub.add_parser("recording-preflight")
+    recording_preflight.add_argument("recording", type=Path)
+    recording_preflight.add_argument("--crop", nargs=4, type=int, metavar=("X", "Y", "WIDTH", "HEIGHT"), required=True)
+    recording_preflight.add_argument("--interval-ms", type=int, default=1000)
+    recording_ingest = sub.add_parser("recording-ingest")
+    recording_ingest.add_argument("recording", type=Path)
+    recording_ingest.add_argument("--crop", nargs=4, type=int, metavar=("X", "Y", "WIDTH", "HEIGHT"), required=True)
+    recording_ingest.add_argument("--interval-ms", type=int, default=1000)
+    recording_ingest.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(arguments)
     try:
         if args.command == "validate":
@@ -76,11 +86,17 @@ def run(arguments: list[str] | None = None) -> int:
             clean = sanitize(json.loads(args.source.read_text(encoding="utf-8")))
             atomic_write(args.output, pretty_bytes(clean))
             result = {"status": "SANITIZED_EXPORT_CREATED", "path": str(args.output.resolve()), "content_digest": clean["content_digest"]}
-        else:
+        elif args.command == "model-handoff":
             with Store(args.database) as store:
                 packet = build_model_handoff(store.list_posts(args.session), args.format)
             atomic_write(args.output, pretty_bytes(packet))
             result = {"status": "CAPABILITY_FREE_HANDOFF_CREATED", "path": str(args.output.resolve())}
+        elif args.command == "recording-preflight":
+            result = {"status": "RECORDING_PREFLIGHT_OK", **preflight_recording(args.recording, tuple(args.crop), interval_ms=args.interval_ms)}
+        else:
+            value = ingest_recording(args.recording, tuple(args.crop), interval_ms=args.interval_ms)
+            atomic_write(args.output, pretty_bytes(value["envelope"]))
+            result = {"status": "RECORDING_PACKET_CREATED", "path": str(args.output.resolve()), "preflight": value["preflight"], "ocr": value["ocr"]}
         print(json.dumps(result, sort_keys=True))
         return 0
     except (XFIError, OSError, ValueError, KeyError, TypeError) as error:
