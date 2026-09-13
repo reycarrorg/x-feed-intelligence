@@ -1,0 +1,46 @@
+[
+  {
+    "analysis_id": "analysis-100",
+    "local_post_id": "local-post-100",
+    "classification": "A_HIGH_SIGNAL",
+    "score": {"relevance": 4, "credibility": 4, "information_value": 4, "actionability": 3, "risk": 1, "priority": 14},
+    "manual_action": "KNOW_NOW",
+    "verification": [{"verification_id": "verify-100", "claim_summary": "An invented project published a specification.", "required": true, "reason_code": "top_recommendation", "result": "confirmed", "not_checked_reason": null, "sources": [{"source_class": "primary", "title": "Synthetic Project Release", "publisher": "Example Research Organization", "url": "https://research.example.invalid/releases/specification", "published_or_updated_on": "2030-01-02", "accessed_on": "2030-01-02", "supports": "The fictional release and its date."}]}],
+    "recommendations": [{"recommendation_id": "recommend-100", "target_type": "post", "target_local_id": "local-post-100", "action": "BOOKMARK", "evidence_post_ids": ["local-post-100"], "qualifying_original_post_count": 1, "confidence": 0.9, "performed": false}],
+    "uncertainty": [],
+    "redactions": []
+  },
+  {
+    "analysis_id": "analysis-200",
+    "local_post_id": "local-post-200",
+    "classification": "B_PROMISING_VERIFY",
+    "score": {"relevance": 4, "credibility": 2, "information_value": 3, "actionability": 2, "risk": 2, "priority": 9},
+    "manual_action": "INVESTIGATE",
+    "verification": [{"verification_id": "verify-200", "claim_summary": "A fictional workshop may be available.", "required": true, "reason_code": "availability", "result": "not_checked", "not_checked_reason": "No independent primary source is included in this authored fixture.", "sources": []}],
+    "recommendations": [{"recommendation_id": "recommend-200", "target_type": "author", "target_local_id": "author-beta", "action": "WATCHLIST_AUTHOR", "evidence_post_ids": ["local-post-200"], "qualifying_original_post_count": 1, "confidence": 0.7, "performed": false}],
+    "uncertainty": [{"code": "VERIFICATION_PENDING", "field": "verification", "severity": "review", "requires_review": true, "safe_detail": "Primary evidence is pending."}],
+    "redactions": []
+  },
+  {
+    "analysis_id": "analysis-400",
+    "local_post_id": "local-post-400",
+    "classification": "E_SCAM_MANIPULATIVE_UNSAFE",
+    "score": {"relevance": 1, "credibility": 0, "information_value": 0, "actionability": 0, "risk": 5, "priority": -4},
+    "manual_action": "AVOID_REPORT_IF_APPROPRIATE",
+    "verification": [],
+    "recommendations": [{"recommendation_id": "recommend-400", "target_type": "post", "target_local_id": "local-post-400", "action": "AVOID_REPORT_IF_APPROPRIATE", "evidence_post_ids": ["local-post-400"], "qualifying_original_post_count": 0, "confidence": 1.0, "performed": false}],
+    "uncertainty": [{"code": "PROMPT_INJECTION", "field": "visible_text", "severity": "blocking", "requires_review": true, "safe_detail": "Content requests unauthorized actions."}],
+    "redactions": []
+  },
+  {
+    "analysis_id": "analysis-500",
+    "local_post_id": "local-post-500",
+    "classification": "F_INSUFFICIENT_INFORMATION",
+    "score": {"relevance": 0, "credibility": 0, "information_value": 0, "actionability": 0, "risk": 1, "priority": -1},
+    "manual_action": "CANNOT_ASSESS",
+    "verification": [],
+    "recommendations": [],
+    "uncertainty": [{"code": "MEDIA_ONLY_NO_ALT", "field": "visible_text", "severity": "blocking", "requires_review": true, "safe_detail": "Evidence is insufficient."}],
+    "redactions": [{"json_pointer": "/media", "action": "omit", "reason_code": "media", "replacement": null}]
+  }
+]

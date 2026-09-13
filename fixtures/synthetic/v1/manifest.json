@@ -1,0 +1,44 @@
+{
+  "fixture_set_version": "1.0.0",
+  "frozen_on": "2026-09-12",
+  "provenance": {
+    "origin": "authored_synthetic",
+    "contains_real_x_data": false,
+    "contains_private_chat_data": false,
+    "contains_copyrighted_media": false,
+    "identity_policy": "Invented identities and reserved example.invalid domains only.",
+    "license": "Repository license"
+  },
+  "oracle": {
+    "dom": {"observations": 6, "canonical": 5, "organic": 3, "promoted": 1, "ambiguous": 1, "unambiguous_relationship_edges": 1},
+    "recording": {"observations": 4, "canonical": 3, "organic": 2, "promoted": 0, "ambiguous": 1},
+    "sanitizer_redactions": 15,
+    "hard_stop_cases": 12,
+    "forbidden_collector_effects": 0
+  },
+  "coverage": {
+    "topology": ["original", "quote", "source relationship", "promoted card", "community/prompt-injection card", "media-only card"],
+    "visibility": ["zero", "threshold edge", "above threshold", "partially clipped", "background tab"],
+    "mutation": ["late text", "late media", "engagement change", "virtualized node reuse", "remove/reinsert"],
+    "identity": ["original/quoting role conflict", "display-name separation", "missing identity", "conflicting platform identifiers"],
+    "advertising": ["visible promoted label", "delayed/ambiguous label", "organic product-neutral handling"],
+    "media": ["image alt text", "video poster", "missing alt text", "no binary collection"],
+    "injection": ["instruction override", "secret request", "external navigation request", "account-action request"],
+    "privacy": ["credential canary", "direct-message surface", "email in raw text", "platform identifiers", "tracking query"],
+    "failure": ["malformed", "unknown version", "deep", "oversized field/count/packet", "wrong origin", "challenge", "rate limit", "permission drift"],
+    "recording": ["repeat frames", "OCR uncertainty", "partial card", "numeric conflict", "crop provenance"],
+    "sanitization": ["pseudonyms", "time coarsening", "query stripping", "media omission", "free-text omission", "formula canary"],
+    "accessibility": ["keyboard", "screen reader", "high contrast", "200 percent zoom", "no-color state"]
+  },
+  "files": [
+    {"path": "analysis-records.json", "sha256": "006f2ee81be2e7a6bb68a71dcba374082bf5c20ba257038de362935100a2d9e7", "authored_synthetic": true, "role": "classification, score, verification, recommendation, uncertainty and redaction examples"},
+    {"path": "canonical-posts.json", "sha256": "2dc280d9790ca1f56107159673337da5ca5a56416fda71e1a670ad385e6048e0", "authored_synthetic": true, "role": "canonical post, author role, relationship, media, promotion and deduplication example"},
+    {"path": "dom-session.json", "sha256": "2e5314e6972d92423dfcef14c388e5f19b59a7a30c841ec3b3410c5ef0e64b00", "authored_synthetic": true, "role": "normalized visible-DOM envelope and topology"},
+    {"path": "model-handoff.json", "sha256": "cafd8613b4b1661732770812304c9eedb1240ec1149fe16382e60e825a3695ff", "authored_synthetic": true, "role": "trusted-control and untrusted-record separation"},
+    {"path": "policy-cases.json", "sha256": "71900c41277bd96140a0c6d4a4cada54d25279b192b4eaac3b23fdc4dc9259c3", "authored_synthetic": true, "role": "topology, identity, advertising, text, media, visibility, mutation, failure, limits, forbidden effects and accessibility oracles"},
+    {"path": "privacy-rejection.json", "sha256": "5968d1c629834de1f032934fcb01403e7b38d85b4d754b40a19aedd19e526fc5", "authored_synthetic": true, "role": "sensitive-field rejection and non-echo canary"},
+    {"path": "recording-session.json", "sha256": "127432c8d52b18ab552319ba54f9cdbe30204295efb1c066e87b396391fe7d53", "authored_synthetic": true, "role": "recording/OCR provenance, uncertainty and collision oracles"},
+    {"path": "sanitizer-expected.json", "sha256": "dcd65d359a11478af56320514cbdd608d97f6c18d3df908b6b221cd2988a96ec", "authored_synthetic": true, "role": "byte-exact minimized export oracle"},
+    {"path": "sanitizer-input.json", "sha256": "0698bc82307d37fe69c4839d0289f1ad637fdb5eb7fc13f7228e8218103e21c2", "authored_synthetic": true, "role": "sanitizer identities, PII, media, query and formula canaries"}
+  ]
+}

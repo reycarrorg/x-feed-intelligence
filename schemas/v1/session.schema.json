@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.x-feed-intelligence.invalid/v1/session.schema.json",
+  "title": "Collection session v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["session_id", "schema_version", "source", "started_at", "ended_at", "origin", "collector_version", "privacy_profile", "limits"],
+  "properties": {
+    "session_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "schema_version": {"const": "1.0.0"},
+    "source": {"type": "string", "enum": ["synthetic_dom", "synthetic_recording", "user_supplied_recording"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "ended_at": {"type": "string", "format": "date-time"},
+    "origin": {"type": ["string", "null"], "enum": ["https://x.com", null]},
+    "collector_version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "privacy_profile": {"const": "default_local"},
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_candidates", "max_duration_seconds", "max_packet_bytes"],
+      "properties": {
+        "max_candidates": {"const": 250},
+        "max_duration_seconds": {"const": 1800},
+        "max_packet_bytes": {"const": 5242880}
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0.0",
+  "session": {"session_id": "synthetic-private-reject"},
+  "authorization_header": "Bearer synthetic-canary-never-echo",
+  "direct_messages": [{"sender": "invented", "text": "This invented private message must never import."}],
+  "expected": {"accepted": false, "category": "REJECTED_CREDENTIAL_FIELD", "must_not_echo": "synthetic-canary-never-echo"}
+}

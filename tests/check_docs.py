@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic documentation and repository-safety checks for Gate 0."""
+"""Deterministic documentation and repository-safety checks through Gate 1."""
 
 from __future__ import annotations
 
@@ -27,6 +27,18 @@ REQUIRED = (
     "docs/research/report-methodology.md",
     "docs/research/activation-data-flow-and-synthetic-tests.md",
     "docs/adr/0001-platform-selection.md",
+    "THIRD_PARTY_NOTICES.md",
+    "docs/gate1/README.md",
+    "docs/gate1/THREAT_MODEL.md",
+    "docs/gate1/ANALYSIS_CONTRACTS.md",
+    "docs/gate1/RETENTION_AND_EXPORT.md",
+    "docs/gate1/EXTENSION_LIFECYCLE.md",
+    "docs/gate1/MODEL_HANDOFF.md",
+    "docs/gate1/METRICS_AND_ORACLES.md",
+    "docs/gate1/DEPENDENCY_AND_SBOM_PLAN.md",
+    "docs/gate1/GATE2_WORK_BREAKDOWN.md",
+    "docs/gate1/REVIEW_RECORD.md",
+    "docs/gate1/POLICY_RECHECK.md",
 )
 
 FORBIDDEN_SUFFIXES = {
@@ -36,7 +48,7 @@ FORBIDDEN_SUFFIXES = {
 
 REQUIRED_PHRASES = {
     "docs/adr/0001-platform-selection.md": (
-        "Status: Accepted for Gate 1 planning",
+        "Status: Accepted; implemented by the Gate 1 contract baseline",
         "No real-account access",
         "recording",
         "passive",
@@ -61,6 +73,44 @@ REQUIRED_PHRASES = {
         "permanent suspension",
         "Synthetic-only through Gate 2",
         "Hard-stop states",
+    ),
+    "docs/gate1/THREAT_MODEL.md": (
+        "Browser extension",
+        "Recording selection",
+        "SQLite database",
+        "Model handoff",
+        "Sanitized export",
+        "Packaging",
+    ),
+    "docs/gate1/ANALYSIS_CONTRACTS.md": (
+        "Deterministic deduplication",
+        "Primary-source verification",
+        "Prompt injection and tool authority",
+        "Sensitive-data rejection",
+        "Sanitized export",
+    ),
+    "docs/gate1/EXTENSION_LIFECYCLE.md": (
+        "https://x.com/*",
+        "PERMISSION_PROMPT",
+        "CAPTURING",
+        "Fail closed",
+    ),
+    "docs/gate1/GATE2_WORK_BREAKDOWN.md": (
+        "synthetic and explicitly user-supplied data",
+        "Live X access",
+        "Gate 2 completion does not authorize Gate 3",
+    ),
+    "docs/gate1/REVIEW_RECORD.md": (
+        "no security finding",
+        "zero complete-canary echoes",
+        "not proof of a production implementation",
+        "Gate 2 is ready for review, not automatically activated",
+    ),
+    "docs/gate1/POLICY_RECHECK.md": (
+        "did not open X",
+        "No Gate 0 premise changed",
+        "synthetic-only extension work",
+        "before Gate 3",
     ),
 }
 

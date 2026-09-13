@@ -2,7 +2,7 @@
 
 ## Gate 0 — Research and platform decision
 
-**Complete on `research/platform-reuse-gate`; pending review and merge.**
+**Complete and merged to `main` in merge commit `9124a7b`.**
 
 - Revalidated the private Analyze Twitter Feed chat as untrusted product evidence without copying its post corpus or opening its attachments.
 - Compared recording/OCR, passive WebExtension, browser automation, private web interfaces, official API, native capture, local CLI, and hybrid architectures.
@@ -13,13 +13,15 @@
 
 ## Gate 1 — Threat model, schemas, and evaluation contracts
 
-**Next; not started by Gate 0.** Exact exit criteria are in the [activation and synthetic-test plan](research/activation-data-flow-and-synthetic-tests.md).
+**Contract set complete on `gate1/contracts-and-synthetic-evidence`; pending review.** The [Gate 1 index](gate1/README.md) maps every exit criterion to its contract and deterministic evidence.
 
 - Define post, author, media, provenance, deduplication, classification, verification, and recommendation schemas.
 - Define prompt-injection and sensitive-data redaction contracts.
 - Specify deterministic classifier evaluation and human-review thresholds.
 - Specify browser lifecycle, stop conditions, local retention, deletion, and export.
 - Build synthetic fixtures and acceptance tests.
+
+Gate 1 uses only authored synthetic data and standard-library validation. Passing it proves contract consistency, not a production collector, OCR pipeline, database, live extension, or package.
 
 ## Gate 2 — Production MVP on synthetic and supplied data
 
@@ -30,6 +32,8 @@
 - Produce a normalized local analysis packet and shareable report.
 - Add deterministic tests, CI, packaging, and privacy/security validation.
 - Do not access an authenticated X account.
+
+The reviewed work packages and exact entry criteria are in the [Gate 2 work breakdown](gate1/GATE2_WORK_BREAKDOWN.md).
 
 ## Gate 3 — User-supervised acceptance
 

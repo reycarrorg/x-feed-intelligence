@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.x-feed-intelligence.invalid/v1/canonical-post.schema.json",
+  "title": "Canonical post v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["local_post_id", "platform_post_id", "canonical_permalink", "observation_ids", "authors", "relationships", "media", "promotion", "visible_text", "deduplication", "uncertainty"],
+  "properties": {
+    "local_post_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "platform_post_id": {"type": ["string", "null"], "maxLength": 256},
+    "canonical_permalink": {"type": ["string", "null"], "maxLength": 2048},
+    "observation_ids": {"type": "array", "minItems": 1, "maxItems": 250, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "authors": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "common.schema.json#/$defs/AuthorRef"}},
+    "relationships": {"type": "array", "maxItems": 16, "items": {"$ref": "common.schema.json#/$defs/Relationship"}},
+    "media": {"type": "array", "maxItems": 16, "items": {"$ref": "common.schema.json#/$defs/Media"}},
+    "promotion": {"$ref": "common.schema.json#/$defs/PromotedCard"},
+    "visible_text": {"type": ["string", "null"], "maxLength": 10000},
+    "deduplication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "confidence", "review_required", "evidence_observation_ids"],
+      "properties": {
+        "method": {"type": "string", "enum": ["platform_id", "canonical_permalink", "exact_content_tuple", "temporal_layout_continuity", "human_review", "singleton"]},
+        "confidence": {"$ref": "common.schema.json#/$defs/Confidence"},
+        "review_required": {"type": "boolean"},
+        "evidence_observation_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
+      }
+    },
+    "uncertainty": {"type": "array", "maxItems": 64, "items": {"$ref": "common.schema.json#/$defs/Uncertainty"}}
+  }
+}

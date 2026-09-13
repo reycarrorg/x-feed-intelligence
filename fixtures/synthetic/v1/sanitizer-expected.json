@@ -1,0 +1,151 @@
+{
+  "schema_version": "1.0.0",
+  "sanitizer_version": "1.0.0",
+  "generated_on": "2030-01-02",
+  "authors": [
+    {
+      "author": "author-001"
+    },
+    {
+      "author": "author-002"
+    }
+  ],
+  "posts": [
+    {
+      "post": "post-001",
+      "author": "author-001",
+      "summary": "A fictional project published a deterministic local specification.",
+      "classification": "A_HIGH_SIGNAL",
+      "score": {
+        "relevance": 4,
+        "credibility": 4,
+        "information_value": 4,
+        "actionability": 3,
+        "risk": 1,
+        "priority": 14
+      },
+      "observed_on": "2030-01-02",
+      "uncertainty": []
+    },
+    {
+      "post": "post-002",
+      "author": "author-002",
+      "summary": "An invented quote adds a reproducibility caveat.",
+      "classification": "B_PROMISING_VERIFY",
+      "score": {
+        "relevance": 4,
+        "credibility": 2,
+        "information_value": 3,
+        "actionability": 2,
+        "risk": 2,
+        "priority": 9
+      },
+      "observed_on": "2030-01-02",
+      "uncertainty": [
+        "VERIFICATION_PENDING"
+      ]
+    }
+  ],
+  "verification_sources": [
+    {
+      "title": "Synthetic Project Release",
+      "publisher": "Example Research Organization",
+      "url": "https://research.example.invalid/releases/specification",
+      "result": "confirmed"
+    }
+  ],
+  "redaction_manifest": [
+    {
+      "json_pointer": "/authors/0",
+      "action": "pseudonymize",
+      "reason_code": "account_identifier",
+      "replacement": "author-002"
+    },
+    {
+      "json_pointer": "/authors/1",
+      "action": "pseudonymize",
+      "reason_code": "account_identifier",
+      "replacement": "author-001"
+    },
+    {
+      "json_pointer": "/posts/0/local_post_id",
+      "action": "replace",
+      "reason_code": "platform_identifier",
+      "replacement": "post-001"
+    },
+    {
+      "json_pointer": "/posts/0/platform_post_id",
+      "action": "omit",
+      "reason_code": "platform_identifier",
+      "replacement": null
+    },
+    {
+      "json_pointer": "/posts/0/raw_text",
+      "action": "omit",
+      "reason_code": "free_text_identity",
+      "replacement": null
+    },
+    {
+      "json_pointer": "/posts/0/observed_at",
+      "action": "coarsen",
+      "reason_code": "precise_time",
+      "replacement": "2030-01-02"
+    },
+    {
+      "json_pointer": "/posts/0/captured_url",
+      "action": "omit",
+      "reason_code": "platform_identifier",
+      "replacement": null
+    },
+    {
+      "json_pointer": "/posts/0/media",
+      "action": "omit",
+      "reason_code": "media",
+      "replacement": null
+    },
+    {
+      "json_pointer": "/posts/1/local_post_id",
+      "action": "replace",
+      "reason_code": "platform_identifier",
+      "replacement": "post-002"
+    },
+    {
+      "json_pointer": "/posts/1/platform_post_id",
+      "action": "omit",
+      "reason_code": "platform_identifier",
+      "replacement": null
+    },
+    {
+      "json_pointer": "/posts/1/raw_text",
+      "action": "omit",
+      "reason_code": "free_text_identity",
+      "replacement": null
+    },
+    {
+      "json_pointer": "/posts/1/observed_at",
+      "action": "coarsen",
+      "reason_code": "precise_time",
+      "replacement": "2030-01-02"
+    },
+    {
+      "json_pointer": "/posts/1/captured_url",
+      "action": "omit",
+      "reason_code": "tracking_parameter",
+      "replacement": null
+    },
+    {
+      "json_pointer": "/posts/1/media",
+      "action": "omit",
+      "reason_code": "media",
+      "replacement": null
+    },
+    {
+      "json_pointer": "/verification_sources/0/url",
+      "action": "strip_query",
+      "reason_code": "tracking_parameter",
+      "replacement": "https://research.example.invalid/releases/specification"
+    }
+  ],
+  "content_digest": "sha256:5e86f5c2ef93556a05c4e0ac8d3b10033ca043f6fcf85617ccd518f68f1aab8f",
+  "privacy_warning": "Minimized synthetic export; prose can still contain contextual identity clues."
+}

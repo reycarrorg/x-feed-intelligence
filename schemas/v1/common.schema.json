@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.x-feed-intelligence.invalid/v1/common.schema.json",
+  "title": "X Feed Intelligence v1 common types",
+  "$defs": {
+    "NonEmptyString": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "Confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "AuthorRole": {
+      "type": "string",
+      "enum": ["presenting", "original", "quoting", "reposting", "mentioned", "advertiser", "unknown"]
+    },
+    "AuthorRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local_author_id", "role", "identity_confidence"],
+      "properties": {
+        "local_author_id": {"$ref": "#/$defs/NonEmptyString"},
+        "platform_author_id": {"type": ["string", "null"], "maxLength": 256},
+        "display_name": {"type": ["string", "null"], "maxLength": 256},
+        "handle": {"type": ["string", "null"], "maxLength": 64},
+        "role": {"$ref": "#/$defs/AuthorRole"},
+        "identity_confidence": {"$ref": "#/$defs/Confidence"},
+        "uncertainty_codes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/NonEmptyString"}
+        }
+      }
+    },
+    "Relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source_local_post_id", "confidence"],
+      "properties": {
+        "kind": {"type": "string", "enum": ["repost_of", "quotes", "reply_to", "source_of"]},
+        "source_local_post_id": {"$ref": "#/$defs/NonEmptyString"},
+        "source_platform_post_id": {"type": ["string", "null"], "maxLength": 256},
+        "confidence": {"$ref": "#/$defs/Confidence"},
+        "provenance_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/NonEmptyString"}
+        }
+      }
+    },
+    "Media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local_media_id", "kind", "binary_collected", "confidence"],
+      "properties": {
+        "local_media_id": {"$ref": "#/$defs/NonEmptyString"},
+        "kind": {"type": "string", "enum": ["image", "video", "animated_image", "link_card", "audio", "unknown"]},
+        "alt_text": {"type": ["string", "null"], "maxLength": 4096},
+        "visible_description": {"type": ["string", "null"], "maxLength": 4096},
+        "perceptual_fingerprint": {"type": ["string", "null"], "pattern": "^synthetic:|^sha256:[a-f0-9]{64}$"},
+        "binary_collected": {"const": false},
+        "confidence": {"$ref": "#/$defs/Confidence"},
+        "provenance_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/NonEmptyString"}
+        }
+      }
+    },
+    "Provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance_id", "modality", "collector_version", "parser_or_ocr_version", "field", "confidence"],
+      "properties": {
+        "provenance_id": {"$ref": "#/$defs/NonEmptyString"},
+        "modality": {"type": "string", "enum": ["synthetic_dom", "synthetic_recording", "manual"]},
+        "collector_version": {"$ref": "#/$defs/NonEmptyString"},
+        "parser_or_ocr_version": {"$ref": "#/$defs/NonEmptyString"},
+        "field": {"$ref": "#/$defs/NonEmptyString"},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "video_time_ms": {"type": ["integer", "null"], "minimum": 0},
+        "crop_xywh": {
+          "type": ["array", "null"],
+          "prefixItems": [
+            {"type": "integer", "minimum": 0},
+            {"type": "integer", "minimum": 0},
+            {"type": "integer", "minimum": 1},
+            {"type": "integer", "minimum": 1}
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "confidence": {"$ref": "#/$defs/Confidence"}
+      }
+    },
+    "Uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "field", "severity", "requires_review"],
+      "properties": {
+        "code": {"$ref": "#/$defs/NonEmptyString"},
+        "field": {"$ref": "#/$defs/NonEmptyString"},
+        "severity": {"type": "string", "enum": ["info", "review", "blocking"]},
+        "requires_review": {"type": "boolean"},
+        "safe_detail": {"type": ["string", "null"], "maxLength": 512}
+      }
+    },
+    "PromotedCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence", "confidence"],
+      "properties": {
+        "status": {"type": "string", "enum": ["organic", "promoted", "ambiguous"]},
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {"type": "string", "enum": ["visible_label", "delayed_label", "layout_marker", "manual_review", "none"]}
+        },
+        "confidence": {"$ref": "#/$defs/Confidence"}
+      }
+    },
+    "Score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relevance", "credibility", "information_value", "actionability", "risk", "priority"],
+      "properties": {
+        "relevance": {"type": "integer", "minimum": 0, "maximum": 5},
+        "credibility": {"type": "integer", "minimum": 0, "maximum": 5},
+        "information_value": {"type": "integer", "minimum": 0, "maximum": 5},
+        "actionability": {"type": "integer", "minimum": 0, "maximum": 5},
+        "risk": {"type": "integer", "minimum": 0, "maximum": 5},
+        "priority": {"type": "integer", "minimum": -5, "maximum": 20}
+      }
+    },
+    "Verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification_id", "claim_summary", "required", "result", "sources"],
+      "properties": {
+        "verification_id": {"$ref": "#/$defs/NonEmptyString"},
+        "claim_summary": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "required": {"type": "boolean"},
+        "reason_code": {"type": ["string", "null"], "enum": ["money", "security", "identity", "health", "law", "availability", "implementation", "deadline", "top_recommendation", "not_consequential", null]},
+        "result": {"type": "string", "enum": ["confirmed", "partially_confirmed", "contradicted", "not_found", "not_checked"]},
+        "not_checked_reason": {"type": ["string", "null"], "maxLength": 512},
+        "sources": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_class", "title", "publisher", "url", "accessed_on", "supports"],
+            "properties": {
+              "source_class": {"type": "string", "enum": ["primary", "reputable_secondary"]},
+              "title": {"type": "string", "minLength": 1, "maxLength": 512},
+              "publisher": {"type": "string", "minLength": 1, "maxLength": 256},
+              "url": {"type": "string", "pattern": "^https://"},
+              "published_or_updated_on": {"type": ["string", "null"], "format": "date"},
+              "accessed_on": {"type": "string", "format": "date"},
+              "supports": {"type": "string", "minLength": 1, "maxLength": 1024}
+            }
+          }
+        }
+      }
+    },
+    "Recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recommendation_id", "target_type", "target_local_id", "action", "evidence_post_ids", "confidence", "performed"],
+      "properties": {
+        "recommendation_id": {"$ref": "#/$defs/NonEmptyString"},
+        "target_type": {"type": "string", "enum": ["post", "author", "signal"]},
+        "target_local_id": {"$ref": "#/$defs/NonEmptyString"},
+        "action": {"type": "string", "enum": ["KNOW_NOW", "INVESTIGATE", "TRY_SAFELY", "INCORPORATE", "BOOKMARK", "CONSIDER_LIKING", "CONSIDER_FOLLOWING_AUTHOR", "WATCHLIST_AUTHOR", "ENJOY_COMMUNITY", "IGNORE", "MUTE_SIGNAL", "AVOID_REPORT_IF_APPROPRIATE", "CANNOT_ASSESS"]},
+        "evidence_post_ids": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/NonEmptyString"}},
+        "qualifying_original_post_count": {"type": "integer", "minimum": 0},
+        "confidence": {"$ref": "#/$defs/Confidence"},
+        "performed": {"const": false}
+      }
+    },
+    "Redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["json_pointer", "action", "reason_code"],
+      "properties": {
+        "json_pointer": {"type": "string", "pattern": "^/"},
+        "action": {"type": "string", "enum": ["omit", "pseudonymize", "coarsen", "strip_query", "replace"]},
+        "reason_code": {"type": "string", "enum": ["credential", "direct_message", "notification", "email", "account_identifier", "platform_identifier", "media", "precise_time", "tracking_parameter", "free_text_identity", "unrelated_private_data"]},
+        "replacement": {"type": ["string", "null"], "maxLength": 256}
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@ X Feed Intelligence is a local-first project for turning user-supplied X/Twitter
 
 ## Status
 
-**Research Gate 0 is complete on the research branch and awaits review.** No collector, analyzer, authenticated browser test, automated scrolling, social interaction, dependency installation, or production release has been implemented.
+**Research Gate 0 is merged. Gate 1's contract and deterministic synthetic-evidence set is complete and awaiting review.** No production collector, analyzer, OCR pipeline, database, extension build, authenticated browser test, automated scrolling, social interaction, third-party dependency, or release has been implemented.
 
 The accepted Gate 0 architecture is a local hybrid with two independent inputs and one normalized analysis core:
 
@@ -33,6 +33,13 @@ Authenticated X testing requires the user. CAPTCHA, login challenges, rate limit
 - [Report methodology](docs/research/report-methodology.md)
 - [Activation, data flow, and synthetic tests](docs/research/activation-data-flow-and-synthetic-tests.md)
 - [Platform ADR](docs/adr/0001-platform-selection.md)
+- [Gate 1 contract set](docs/gate1/README.md)
+- [Gate 1 threat model](docs/gate1/THREAT_MODEL.md)
+- [Gate 1 schemas](schemas/v1)
+- [Gate 1 synthetic fixture manifest](fixtures/synthetic/v1/manifest.json)
+- [Gate 1 review record](docs/gate1/REVIEW_RECORD.md)
+- [Gate 1 policy recheck](docs/gate1/POLICY_RECHECK.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Security policy](SECURITY.md)
 
 ## Data and repository policy

@@ -1,6 +1,6 @@
 # ADR 0001: Local Hybrid Platform with Recording-First Delivery
 
-- Status: Accepted for Gate 1 planning
+- Status: Accepted; implemented by the Gate 1 contract baseline
 - Decision date: 2026-09-12
 - Scope: Architecture selection only; no live X collector is approved
 
@@ -86,3 +86,5 @@ Hold Tesseract until a supported release resolves the reviewed advisories. Treat
 Gate 1 is limited to threat modeling, schemas, lifecycle/permission contracts, privacy and retention design, dependency notices, and deterministic synthetic evaluation. Its exact exit criteria are in the [activation and synthetic-test plan](../research/activation-data-flow-and-synthetic-tests.md).
 
 No real-account access, extension installation into the user's normal profile, paid API use, or social action is approved by this ADR.
+
+The Gate 1 baseline is indexed in the [Gate 1 contract set](../gate1/README.md). It preserves this ADR without adding a live collector or dependency. Gate 2 entry remains contingent on review and merge of those contracts and is limited to synthetic and explicitly user-supplied data.

@@ -1,0 +1,99 @@
+{
+  "topology_cases": [
+    {"name": "original", "top_level_units": 1, "roles": ["original"], "relationship": null, "organic_units": 1},
+    {"name": "repost", "top_level_units": 1, "roles": ["reposting", "original"], "relationship": "repost_of", "organic_units": 1},
+    {"name": "quote", "top_level_units": 1, "roles": ["quoting", "original"], "relationship": "quotes", "organic_units": 1},
+    {"name": "reply-as-card", "top_level_units": 1, "roles": ["original"], "relationship": "reply_to", "organic_units": 1},
+    {"name": "two-visible-thread-cards", "top_level_units": 2, "roles": ["original"], "relationship": null, "organic_units": 2},
+    {"name": "promoted-card", "top_level_units": 1, "roles": ["advertiser"], "relationship": null, "organic_units": 0},
+    {"name": "community-note", "top_level_units": 1, "roles": ["original"], "relationship": null, "organic_units": 1}
+  ],
+  "identity_cases": [
+    {"name": "display-name-collision", "automatic_merge": false},
+    {"name": "handle-change-same-platform-author", "automatic_merge": true},
+    {"name": "repost-quote-role-conflict", "automatic_merge": false},
+    {"name": "missing-platform-id-exact-tuple", "automatic_merge": true},
+    {"name": "missing-platform-id-partial-evidence", "automatic_merge": false}
+  ],
+  "advertising_cases": [
+    {"name": "clear-promoted-label", "status": "promoted", "organic_denominator": false},
+    {"name": "delayed-label", "status": "ambiguous", "organic_denominator": false},
+    {"name": "ambiguous-sponsorship", "status": "ambiguous", "organic_denominator": false},
+    {"name": "ordinary-product-discussion", "status": "organic", "organic_denominator": true}
+  ],
+  "text_cases": [
+    {"name": "long-text", "behavior": "bounded_and_preserved"},
+    {"name": "unicode-nfc", "behavior": "normalize_for_comparison_preserve_evidence"},
+    {"name": "right-to-left", "behavior": "preserve_and_escape"},
+    {"name": "emoji", "behavior": "preserve_and_escape"},
+    {"name": "code-like", "behavior": "quote_never_execute"},
+    {"name": "prompt-injection", "behavior": "zero_authority_and_stop"},
+    {"name": "zero-width", "behavior": "preserve_and_flag_review"}
+  ],
+  "media_cases": [
+    {"name": "image-alt-text", "binary_collected": false, "uncertain": false},
+    {"name": "video-poster", "binary_collected": false, "uncertain": false},
+    {"name": "missing-alt-text", "binary_collected": false, "uncertain": true},
+    {"name": "quoted-media", "binary_collected": false, "uncertain": false},
+    {"name": "media-only-card", "binary_collected": false, "uncertain": true}
+  ],
+  "visibility_cases": [
+    {"name": "zero", "ratio": 0.0, "document_visible": true, "eligible": false},
+    {"name": "below-edge", "ratio": 0.499999, "document_visible": true, "eligible": false},
+    {"name": "exact-edge", "ratio": 0.5, "document_visible": true, "eligible": true},
+    {"name": "above-edge", "ratio": 0.75, "document_visible": true, "eligible": true},
+    {"name": "background-tab", "ratio": 1.0, "document_visible": false, "eligible": false},
+    {"name": "partially-clipped", "ratio": 0.51, "document_visible": true, "eligible": true}
+  ],
+  "mutation_cases": [
+    {"name": "text-loaded-late", "stable_identity_changed": false, "new_appearance": false},
+    {"name": "media-loaded-late", "stable_identity_changed": false, "new_appearance": false},
+    {"name": "engagement-change", "stable_identity_changed": false, "new_appearance": false},
+    {"name": "virtual-node-reused", "stable_identity_changed": true, "new_appearance": true},
+    {"name": "remove-reinsert-same-card", "stable_identity_changed": false, "new_appearance": false}
+  ],
+  "hard_stop_cases": [
+    {"name": "login", "code": "LOGIN_SURFACE"},
+    {"name": "challenge", "code": "CAPTCHA_OR_TURNSTILE"},
+    {"name": "rate-limit", "code": "RATE_LIMIT"},
+    {"name": "wrong-origin", "code": "WRONG_ORIGIN"},
+    {"name": "permission-change", "code": "PERMISSION_DRIFT"},
+    {"name": "unknown-markup", "code": "UNKNOWN_TOPOLOGY"},
+    {"name": "ambiguity-over-limit", "code": "AMBIGUITY_LIMIT"},
+    {"name": "queue-251", "code": "QUEUE_LIMIT"},
+    {"name": "duration-1801", "code": "DURATION_LIMIT"},
+    {"name": "packet-5242881", "code": "PACKET_LIMIT"},
+    {"name": "injection", "code": "INJECTION_CONTENT"},
+    {"name": "account-action", "code": "ACCOUNT_ACTION_REQUEST"}
+  ],
+  "malformed_cases": [
+    {"name": "missing-version", "category": "REJECTED_SCHEMA"},
+    {"name": "unknown-version", "category": "REJECTED_VERSION"},
+    {"name": "wrong-type", "category": "REJECTED_SCHEMA"},
+    {"name": "depth-65", "category": "REJECTED_DEPTH"},
+    {"name": "field-10001", "category": "REJECTED_FIELD_LIMIT"},
+    {"name": "observations-251", "category": "REJECTED_COUNT_LIMIT"},
+    {"name": "packet-5242881", "category": "REJECTED_PACKET_LIMIT"}
+  ],
+  "accessibility_cases": [
+    {"name": "keyboard-only", "required": true, "expected": "all lifecycle controls reachable and operable"},
+    {"name": "screen-reader", "required": true, "expected": "state and controls have persistent accessible names"},
+    {"name": "high-contrast", "required": true, "expected": "text state remains distinguishable"},
+    {"name": "zoom-200", "required": true, "expected": "no control or label is clipped"},
+    {"name": "no-color", "required": true, "expected": "state and class are conveyed in text"}
+  ],
+  "collector_effects": {
+    "network_requests": 0,
+    "account_actions": 0,
+    "automated_input_events": 0,
+    "cookie_reads": 0,
+    "header_reads": 0,
+    "page_storage_reads": 0,
+    "hidden_data_reads": 0,
+    "page_world_injections": 0,
+    "post_stop_observations": 0,
+    "post_stop_observers": 0,
+    "post_stop_timers": 0,
+    "post_stop_dom_references": 0
+  }
+}
