@@ -29,7 +29,7 @@ Both inputs produce a versioned envelope before persistence:
     "source": "recording-or-passive-extension",
     "started_at": "coarse-or-local-timestamp",
     "ended_at": "coarse-or-local-timestamp",
-    "origin": "https://x.com-or-null",
+    "origin": "https://fixture.example.invalid-or-null",
     "collector_version": "fixture-version",
     "privacy_profile": "default-local"
   },
@@ -38,6 +38,8 @@ Both inputs produce a versioned envelope before persistence:
   "redaction_manifest": []
 }
 ```
+
+Gate 1 refines this Gate 0 sketch with a deterministic source/origin invariant: authored synthetic DOM sessions use the reserved `https://fixture.example.invalid` origin, while recording sessions use `null`. Live `https://x.com` is not a valid schema-v1 session origin and requires a separately gated future source/schema version.
 
 Each observation carries a session-scoped ID, input location (video time and crop coordinates, or DOM viewport time), source modality, visible structural fields, field-level confidence, promoted status, original/repost/quote relationships, media descriptors, parser/OCR version, and warnings. Raw HTML, scripts, cookies, headers, page storage, media binaries, and browser-profile material are not envelope fields.
 
@@ -55,6 +57,8 @@ Each observation carries a session-scoped ID, input location (video time and cro
 FFmpeg should initially be invoked as a separately installed local executable with its version/configuration recorded. Bundling requires a distinct license/package decision. OpenCV or PySceneDetect enters only after benchmarks show that simpler change detection misses the target.
 
 ## Passive-extension lifecycle
+
+This section describes a future production proposal. Through Gate 2 that proposal is statically inspected but never granted or run. Browser integration instead uses a distinct, conspicuously non-distributable manifest limited to `https://fixture.example.invalid`, mapped to an ephemeral loopback fixture server in an isolated profile with outbound access denied. A deterministic promotion guard rejects all test origins, markers, harness files, and fixtures from any production candidate.
 
 ### Installation and inactive state
 
@@ -161,13 +165,13 @@ Performance must be measured on documented hardware, browser/runtime versions, f
 
 1. Schema and migration tests: canonical examples, boundary sizes, invalid types, unknown versions, idempotent imports, and rollback.
 2. Pure parser tests: frozen synthetic HTML fragments with no browser network.
-3. Browser integration: local synthetic pages under Playwright; outbound network denied; test scrolling is limited to the synthetic page.
+3. Browser integration: the test-only manifest and reserved synthetic origin under Playwright; the hostname maps to an ephemeral loopback server, outbound network is denied, and test scrolling is limited to the synthetic page. The production proposal is inspected only and is never loaded.
 4. Recording golden tests: generated synthetic video with expected frames, cards, OCR fields, counts, and uncertainty.
 5. Deduplication/property tests: randomized observation order, repeats, near collisions, and stable results.
 6. Security tests: injection strings, path traversal, spreadsheet formulas, HTML/Markdown escaping, decompression/size limits, secret canaries, and malicious SQLite/input rejection.
 7. Privacy tests: telemetry absence, network-deny assertions, log capture, retention expiration, transactional purge, backup behavior, and sanitizer golden files.
 8. Accessibility tests: automated semantics plus keyboard and screen-reader manual checks.
-9. Packaging/license tests: locked dependencies, notices, SBOM, extension manifest diff, no remote code, reproducible artifact hashes.
+9. Packaging/license tests: locked dependencies, notices, SBOM, separate production/test manifest diffs, negative promotion controls, no remote code, reproducible artifact hashes.
 
 Playwright is allowed only for local synthetic-fixture tests. It must never open X or import a real browser profile.
 

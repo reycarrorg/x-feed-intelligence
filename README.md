@@ -11,7 +11,7 @@ The accepted Gate 0 architecture is a local hybrid with two independent inputs a
 1. screen recordings supplied by the user; and
 2. a conditional passive browser-extension collector that observes visible posts only while the user browses an explicitly approved X origin.
 
-The recording path is the production-safe default. The extension may be implemented and tested only against synthetic local fixtures through Gate 2. A later live X test requires an explicit, user-supervised risk decision; passive extraction may still violate X's Terms and could lead to account enforcement.
+The recording path is the production-safe default. Through Gate 2, the future production extension proposal is statically inspected only; browser execution uses a separate non-distributable harness restricted to a reserved synthetic origin with outbound traffic denied. A later live X test requires a new source/schema version and an explicit, user-supervised risk decision; passive extraction may still violate X's Terms and could lead to account enforcement.
 
 The product will classify organic posts, exclude advertisements from the normal count, flag manipulation and prompt injection, identify high-signal information and opportunities, verify consequential claims against primary sources, and recommend accounts worth considering for a follow. It will not automatically like, follow, repost, reply, message, or schedule account activity.
 

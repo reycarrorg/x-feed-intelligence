@@ -4,6 +4,8 @@
 
 The frozen Gate 1 corpus is listed in [`fixtures/synthetic/v1/manifest.json`](../../fixtures/synthetic/v1/manifest.json). Every source and expected-output file is authored for this repository, uses invented identities and reserved domains, and has a SHA-256 recorded over its exact bytes. The acceptance runner recomputes every digest before using a fixture. Changing a fixture or oracle requires an intentional manifest update and review.
 
+Session provenance is a cross-field invariant, not two independent labels: `synthetic_dom` requires origin `https://fixture.example.invalid`; `synthetic_recording` and `user_supplied_recording` require origin `null`. Negative controls reject the former `synthetic_dom` plus `https://x.com` pairing, recordings carrying a DOM origin, and any unversioned live source.
+
 Expected labels are independent oracle fields, never derived from the system output under test. The runner sorts all unordered output explicitly and executes deduplication across multiple input orders to prove determinism.
 
 ## Exact formulas
@@ -48,15 +50,15 @@ Run `python3 tests/gate1_acceptance.py`. It uses only the Python standard librar
 - every JSON document parses; schema IDs/versions and cross-file references resolve;
 - canonical examples contain required role, relationship, media, provenance, promotion, uncertainty, score, verification, recommendation, and redaction structures;
 - fixture digests and authored-synthetic declarations match;
-- exact-ID, permalink, exact-tuple and conservative-review deduplication invariants are stable across input order;
-- conflicting identity/number/negation/media evidence does not auto-merge;
+- exact-ID, permalink, relation-aware exact-tuple and conservative-review deduplication invariants are stable across input order;
+- conflicting identity/number/negation/media evidence does not auto-merge; two quote authors sharing one embedded original remain distinct, while repost fallback attributes the original source;
 - topology and organic/promoted counts reconcile;
 - score arithmetic and follow/watchlist evidence thresholds hold;
 - injection records have no tool authority;
-- sensitive packets reject without echoing canaries;
-- sanitized output matches byte-for-byte and contains no prohibited identity, media, query, secret, or formula prefix;
+- the credential/private-surface table rejects authorization, API/access/refresh/client-secret, private-key-like, bearer-value, and direct-message cases without echoing complete canaries, while a benign negative control passes;
+- sanitized output matches byte-for-byte, explicitly neutralizes a formula canary in a retained summary, and contains no prohibited identity, media, query, secret, or active formula prefix;
 - wrong-origin, login, challenge, rate-limit, permission and resource cases stop with exact codes;
 - collector events contain zero network/account/input/credential/hidden-data effects;
-- manifest permissions and state-machine edges match the reviewed contract.
+- production and synthetic-test manifest permissions match their separate reviewed contracts, and negative promotion controls reject test origin/files/markers from production candidates.
 
 Gate 1 proves the specification and reference oracle, not a production collector, OCR engine, database, browser extension, or model integration.

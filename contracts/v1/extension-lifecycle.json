@@ -1,5 +1,11 @@
 {
   "contract_version": "1.0.0",
+  "scope": {
+    "proposal": "future_live_production",
+    "gate2_execution": "static_inspection_only",
+    "live_origin_granted_or_exercised_through_gate2": false,
+    "synthetic_browser_execution_contract": "contracts/v1/browser-test-boundary.json"
+  },
   "initial_state": "INACTIVE",
   "states": [
     "INACTIVE",

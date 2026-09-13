@@ -16,12 +16,14 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   docs/gate1/METRICS_AND_ORACLES.md docs/gate1/DEPENDENCY_AND_SBOM_PLAN.md \
   docs/gate1/GATE2_WORK_BREAKDOWN.md docs/gate1/REVIEW_RECORD.md \
   docs/gate1/POLICY_RECHECK.md \
-  contracts/v1/manifest.proposal.json contracts/v1/extension-lifecycle.json \
+  contracts/v1/manifest.proposal.json contracts/v1/manifest.synthetic-test-only.json \
+  contracts/v1/browser-test-boundary.json contracts/v1/extension-lifecycle.json \
   schemas/v1/common.schema.json schemas/v1/session.schema.json \
   schemas/v1/observation.schema.json schemas/v1/canonical-post.schema.json \
   schemas/v1/analysis.schema.json schemas/v1/envelope.schema.json \
   schemas/v1/model-handoff.schema.json \
-  fixtures/synthetic/v1/manifest.json tests/gate1_acceptance.py; do
+  fixtures/synthetic/v1/manifest.json fixtures/synthetic/v1/dedup-role-collisions.json \
+  tests/gate1_acceptance.py; do
   test -s "$repo_root/$path" || { echo "missing or empty: $path" >&2; exit 1; }
 done
 

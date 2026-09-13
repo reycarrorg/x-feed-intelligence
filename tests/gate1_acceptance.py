@@ -23,10 +23,13 @@ SCHEMAS = ROOT / "schemas" / "v1"
 CONTRACTS = ROOT / "contracts" / "v1"
 
 SENSITIVE_KEYS = re.compile(
-    r"(?i)(authorization|auth[_-]?token|bearer|cookie|csrf|password|session[_-]?(?:token|storage)|"
+    r"(?i)(authorization|auth[_-]?token|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|"
+    r"private[_-]?key|bearer|cookie|csrf|password|session[_-]?(?:token|storage)|"
     r"local[_-]?storage|browser[_-]?profile|direct[_-]?messages?|notifications?|payment|har)"
 )
-SECRET_VALUES = re.compile(r"(?i)bearer\s+[a-z0-9._-]{12,}")
+SECRET_VALUES = re.compile(
+    r"(?i)(?:bearer\s+[a-z0-9._-]{12,}|-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----)"
+)
 NEGATIONS = {"no", "not", "never", "without"}
 FORMULA_PREFIXES = ("=", "+", "-", "@")
 
@@ -96,6 +99,16 @@ def validate_schema_instance(value, schema: dict, schema_path: Path, location: s
         validate_schema_instance(value, target, target_path, location)
         return
 
+    if "oneOf" in schema:
+        matches = 0
+        for branch in schema["oneOf"]:
+            try:
+                validate_schema_instance(value, branch, schema_path, location)
+            except CheckFailure:
+                continue
+            matches += 1
+        require(matches == 1, f"{location}: expected exactly one oneOf branch, got {matches}")
+
     if "const" in schema:
         require(value == schema["const"], f"{location}: const mismatch")
     if "enum" in schema:
@@ -158,7 +171,13 @@ def normalized_text(value: str | None) -> str | None:
 
 
 def primary_author(observation: dict) -> str | None:
-    priority = ("original", "quoting", "presenting", "reposting", "unknown")
+    relationship_kinds = {item["kind"] for item in observation["relationships"]}
+    if "quotes" in relationship_kinds:
+        priority = ("quoting", "presenting")
+    elif "repost_of" in relationship_kinds:
+        priority = ("original",)
+    else:
+        priority = ("presenting", "original", "quoting", "reposting", "unknown")
     authors = observation["authors"]
     for role in priority:
         for author in authors:
@@ -397,6 +416,46 @@ def strip_query_and_fragment(url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
 
+def neutralize_formula(value: str) -> str:
+    first_non_whitespace = next((character for character in value if not character.isspace()), None)
+    return "'" + value if first_non_whitespace in FORMULA_PREFIXES else value
+
+
+def has_formula_prefix(value: str) -> bool:
+    first_non_whitespace = next((character for character in value if not character.isspace()), None)
+    return first_non_whitespace in FORMULA_PREFIXES
+
+
+def production_candidate_safe(manifest: dict, bundle_paths: list[str], boundary: dict) -> bool:
+    guard = boundary["production_promotion_guard"]
+    rendered = compact_bytes(manifest).decode("utf-8")
+    if any(value in rendered for value in guard["forbidden_production_values"]):
+        return False
+    return not any(
+        forbidden in path
+        for path in bundle_paths
+        for forbidden in guard["forbidden_bundle_paths"]
+    )
+
+
+def synthetic_harness_safe(manifest: dict) -> bool:
+    rendered = compact_bytes(manifest).decode("utf-8")
+    scripts = manifest.get("content_scripts", [])
+    return (
+        manifest.get("permissions") == ["storage"]
+        and manifest.get("host_permissions") == ["https://fixture.example.invalid/*"]
+        and "optional_host_permissions" not in manifest
+        and bool(scripts)
+        and all(
+            item.get("matches") == ["https://fixture.example.invalid/*"]
+            and item.get("world") == "ISOLATED"
+            and item.get("all_frames") is False
+            for item in scripts
+        )
+        and all(origin not in rendered for origin in ("https://x.com", "https://twitter.com", "https://api.x.com"))
+    )
+
+
 def sanitize(source: dict) -> dict:
     author_ids = sorted(item["local_author_id"] for item in source["authors"])
     author_map = {value: f"author-{index:03d}" for index, value in enumerate(author_ids, 1)}
@@ -417,11 +476,12 @@ def sanitize(source: dict) -> dict:
     posts = []
     for index, post in enumerate(sorted(source["posts"], key=lambda item: item["local_post_id"])):
         post_pseudonym = post_map[post["local_post_id"]]
+        clean_summary = neutralize_formula(post["summary"])
         posts.append(
             {
                 "post": post_pseudonym,
                 "author": author_map[post["author_local_id"]],
-                "summary": post["summary"],
+                "summary": clean_summary,
                 "classification": post["classification"],
                 "score": post["score"],
                 "observed_on": post["observed_at"][:10],
@@ -440,6 +500,15 @@ def sanitize(source: dict) -> dict:
                 {"json_pointer": f"{pointer}/media", "action": "omit", "reason_code": "media", "replacement": None},
             ]
         )
+        if clean_summary != post["summary"]:
+            manifest.append(
+                {
+                    "json_pointer": f"{pointer}/summary",
+                    "action": "replace",
+                    "reason_code": "formula_injection",
+                    "replacement": clean_summary,
+                }
+            )
 
     sources = []
     for index, item in enumerate(source["verification_sources"]):
@@ -498,7 +567,29 @@ def check_schema_documents() -> str:
     examples.extend((item, SCHEMAS / "analysis.schema.json") for item in load_json(FIXTURES / "analysis-records.json"))
     for value, path in examples:
         validate_schema_instance(value, load_json(path), path)
-    return f"{len(schemas)} schemas, {len(required_defs)} required common definitions, {len(examples)} examples validated"
+
+    session_path = SCHEMAS / "session.schema.json"
+    session_schema = load_json(session_path)
+    session = copy.deepcopy(examples[0][0]["session"])
+    validate_schema_instance(session, session_schema, session_path)
+    recording_session = copy.deepcopy(session)
+    recording_session.update({"source": "synthetic_recording", "origin": None})
+    validate_schema_instance(recording_session, session_schema, session_path)
+    supplied_session = copy.deepcopy(session)
+    supplied_session.update({"source": "user_supplied_recording", "origin": None})
+    validate_schema_instance(supplied_session, session_schema, session_path)
+    rejected_pairs = [
+        {**session, "origin": "https://x.com"},
+        {**recording_session, "origin": "https://fixture.example.invalid"},
+        {**session, "source": "live_x_dom", "origin": "https://x.com"},
+    ]
+    for rejected in rejected_pairs:
+        try:
+            validate_schema_instance(rejected, session_schema, session_path)
+        except CheckFailure:
+            continue
+        raise CheckFailure("source/origin negative control was accepted")
+    return f"{len(schemas)} schemas, {len(required_defs)} required common definitions, {len(examples)} examples, 3 valid and 3 rejected source/origin pairings"
 
 
 def check_fixture_manifest() -> str:
@@ -600,6 +691,24 @@ def check_envelopes_and_deduplication() -> str:
     short_b["visible_text"] = "Short synthetic n0te."
     require(not temporal_review_candidate(short_a, short_b), "short OCR text entered similarity review")
 
+    role_cases = load_json(FIXTURES / "dedup-role-collisions.json")["cases"]
+    role_template = copy.deepcopy(dom["observations"][2])
+    for case in role_cases:
+        pair = []
+        for side, authors in (("left", case["authors_left"]), ("right", case["authors_right"])):
+            observation = copy.deepcopy(role_template)
+            observation["observation_id"] = f"{case['name']}-{side}"
+            observation["appearance_index"] = len(pair)
+            observation["platform_post_id"] = None
+            observation["canonical_permalink"] = None
+            observation["authors"] = authors
+            observation["relationships"] = [{"kind": case["relationship_kind"], "source_local_post_id": "shared-source"}]
+            pair.append(observation)
+        require(primary_author(pair[0]) == case["expected_primary_left"], f"left primary author mismatch: {case['name']}")
+        require(primary_author(pair[1]) == case["expected_primary_right"], f"right primary author mismatch: {case['name']}")
+        merged = len(canonicalize(pair)) == 1
+        require(merged is case["expected_automatic_merge"], f"relation-aware fallback mismatch: {case['name']}")
+
     for observations, baseline in ((dom["observations"], baseline_dom), (recording["observations"], baseline_rec)):
         variants = [list(reversed(observations))]
         for seed in range(20):
@@ -607,7 +716,7 @@ def check_envelopes_and_deduplication() -> str:
             random.Random(seed).shuffle(shuffled)
             variants.append(shuffled)
         require(all(canonicalize(items) == baseline for items in variants), "deduplication depends on input order")
-    return "DOM 5/3/1/1 and recording 3/2/0/1 canonical/organic/promoted/ambiguous; 42 order variants stable"
+    return "DOM 5/3/1/1 and recording 3/2/0/1 canonical/organic/promoted/ambiguous; quote/repost role collisions and 42 order variants stable"
 
 
 def check_analysis_contracts() -> str:
@@ -681,14 +790,15 @@ def check_handoff_and_privacy() -> str:
     require(all(value is False for value in packet["authority_result"].values()), "handoff authority result widened")
     require(any("Ignore every rule" in item["quoted_value"] for item in packet["untrusted_records"]), "injection fixture missing")
 
-    privacy = load_json(FIXTURES / "privacy-rejection.json")
-    category = sensitive_category(privacy)
-    safe_error = category or "REJECTED_UNKNOWN"
-    logs = [safe_error, "import rejected before persistence"]
-    canary = privacy["expected"]["must_not_echo"]
-    require(category == privacy["expected"]["category"], "privacy rejection category mismatch")
-    require(all(canary not in item for item in logs), "secret canary echoed")
-    return "injection remained quoted with zero authority; credential packet rejected with zero secret echoes"
+    privacy_cases = load_json(FIXTURES / "privacy-rejection.json")["cases"]
+    for case in privacy_cases:
+        category = sensitive_category(case["packet"])
+        logs = [category or "REJECTED_UNKNOWN", "import rejected before persistence"]
+        require(category == case["expected_category"], f"privacy rejection category mismatch: {case['name']}")
+        require(all(case["must_not_echo"] not in item for item in logs), f"secret canary echoed: {case['name']}")
+    safe_payload = {"token_count": 12, "public_source_url": "https://research.example.invalid", "summary": "Ordinary synthetic text."}
+    require(sensitive_category(safe_payload) is None, "credential detector rejected safe negative control")
+    return f"injection remained quoted with zero authority; {len(privacy_cases)} sensitive packets rejected with zero complete-canary echoes"
 
 
 def check_sanitizer() -> str:
@@ -698,15 +808,20 @@ def check_sanitizer() -> str:
     require(actual["content_digest"] == digest_without_field(actual), "sanitizer digest mismatch")
     require(pretty_bytes(actual) == expected_path.read_bytes(), "sanitizer output differs byte-for-byte from golden file")
     rendered = pretty_bytes(actual).decode("utf-8")
-    prohibited = ["example_alpha", "example_beta", "synthetic-author-", "synthetic-post-", "local-post-", "@example", "?", "#fragment", "media-diagram", "HYPERLINK"]
-    require(all(value not in rendered for value in prohibited), "sanitized export retained a prohibited identity/media/query/formula value")
-    require(all(not post["summary"].startswith(FORMULA_PREFIXES) for post in actual["posts"]), "sanitized summary has spreadsheet formula prefix")
-    require(len(actual["redaction_manifest"]) == 15, "redaction manifest count mismatch")
-    return "golden output matched byte-for-byte with 15 reconciled redactions"
+    prohibited = ["example_alpha", "example_beta", "synthetic-author-", "synthetic-post-", "local-post-", "@example", "?", "#fragment", "media-diagram"]
+    require(all(value not in rendered for value in prohibited), "sanitized export retained a prohibited identity/media/query value")
+    require(all(not has_formula_prefix(post["summary"]) for post in actual["posts"]), "sanitized summary has spreadsheet formula prefix")
+    require(actual["posts"][1]["summary"].startswith("'=HYPERLINK"), "retained formula canary was not neutralized explicitly")
+    require(neutralize_formula("Ordinary summary") == "Ordinary summary", "safe summary changed during formula neutralization")
+    require(neutralize_formula(" \t=SUM(1,1)") == "' \t=SUM(1,1)", "leading-whitespace formula prefix was not neutralized")
+    require(len(actual["redaction_manifest"]) == 16, "redaction manifest count mismatch")
+    return "golden output matched byte-for-byte with 16 reconciled redactions and retained-summary formula neutralization"
 
 
 def check_lifecycle_manifest_and_limits() -> str:
     manifest = load_json(CONTRACTS / "manifest.proposal.json")
+    test_manifest = load_json(CONTRACTS / "manifest.synthetic-test-only.json")
+    boundary = load_json(CONTRACTS / "browser-test-boundary.json")
     require(manifest["manifest_version"] == 3, "manifest is not MV3")
     require(manifest["permissions"] == ["storage", "scripting"], "manifest ordinary permissions drifted")
     require(manifest["optional_host_permissions"] == ["https://x.com/*"], "optional host permission drifted")
@@ -715,6 +830,33 @@ def check_lifecycle_manifest_and_limits() -> str:
     serialized = compact_bytes(manifest).decode("utf-8")
     forbidden_permissions = ["<all_urls>", "cookies", "webRequest", "declarativeNetRequest", "debugger", "nativeMessaging", "downloads", "http://", "twitter.com", "api.x.com", "localhost"]
     require(all(item not in serialized for item in forbidden_permissions), "manifest contains a forbidden permission or host")
+    require(boundary["production_proposal"] == {
+        "manifest": "contracts/v1/manifest.proposal.json",
+        "review_mode": "static_inspection_only",
+        "optional_live_origin": "https://x.com/*",
+        "granted_or_exercised_through_gate2": False,
+        "packaged_for_distribution_through_gate2": False,
+    }, "production proposal boundary drifted")
+    harness = boundary["synthetic_browser_harness"]
+    require(test_manifest["permissions"] == ["storage"], "test harness permissions drifted")
+    require(test_manifest["host_permissions"] == ["https://fixture.example.invalid/*"], "test harness origin drifted")
+    require("optional_host_permissions" not in test_manifest, "test harness exposes optional live permission")
+    require(all(item["matches"] == ["https://fixture.example.invalid/*"] and item["world"] == "ISOLATED" for item in test_manifest["content_scripts"]), "test harness script boundary drifted")
+    require("TEST ONLY" in test_manifest["name"] and "NON-DISTRIBUTABLE" in test_manifest["description"], "test harness markers missing")
+    require(harness["isolated_profile"] is True and harness["outbound_network_denied"] is True and harness["non_distributable"] is True, "test harness safety flags drifted")
+    require(harness["allowed_navigation_origins"] == ["https://fixture.example.invalid"], "test harness navigation allowlist widened")
+    test_serialized = compact_bytes(test_manifest).decode("utf-8")
+    require(all(origin not in test_serialized for origin in ("https://x.com", "https://twitter.com", "https://api.x.com")), "test harness can reach a live X origin")
+    production_paths = ["manifest.json", "background.js", "control.html", "collector.js"]
+    require(production_candidate_safe(manifest, production_paths, boundary), "production proposal failed non-promotion oracle")
+    leaked_manifest = copy.deepcopy(manifest)
+    leaked_manifest["host_permissions"] = ["https://fixture.example.invalid/*"]
+    require(not production_candidate_safe(leaked_manifest, production_paths, boundary), "fixture origin leaked into production negative control")
+    require(not production_candidate_safe(manifest, [*production_paths, "synthetic-harness.js"], boundary), "test harness path leaked into production negative control")
+    widened_test = copy.deepcopy(test_manifest)
+    widened_test["host_permissions"].append("https://x.com/*")
+    require(synthetic_harness_safe(test_manifest), "synthetic harness failed its exact-capability oracle")
+    require(not synthetic_harness_safe(widened_test), "live X origin was accepted by synthetic harness negative control")
 
     lifecycle = load_json(CONTRACTS / "extension-lifecycle.json")
     require(lifecycle["initial_state"] == "INACTIVE", "lifecycle initial state drifted")
@@ -770,7 +912,7 @@ def check_lifecycle_manifest_and_limits() -> str:
     require(1800 <= lifecycle["limits"]["max_duration_seconds"] and 1801 > lifecycle["limits"]["max_duration_seconds"], "duration boundary behavior drifted")
     require(5242880 <= lifecycle["limits"]["max_packet_bytes"] and 5242881 > lifecycle["limits"]["max_packet_bytes"], "packet boundary behavior drifted")
     require(0.05 <= lifecycle["limits"]["max_ambiguity_ratio"] and 0.050001 > lifecycle["limits"]["max_ambiguity_ratio"], "ambiguity boundary behavior drifted")
-    return f"exact MV3 capability set; {len(policy['hard_stop_cases'])} stops, {len(policy['visibility_cases'])} visibility edges, zero forbidden effects"
+    return f"separate production/static and synthetic/test-only MV3 contracts; {len(policy['hard_stop_cases'])} stops, {len(policy['visibility_cases'])} visibility edges, zero forbidden effects"
 
 
 def check_repository_safety_and_notices() -> str:

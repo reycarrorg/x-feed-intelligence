@@ -12,7 +12,7 @@ The canonicalizer processes observations in ascending `(session_id, appearance_i
 
 1. `platform_id`: exact non-empty platform post identifier.
 2. `canonical_permalink`: exact HTTPS permalink after lowercasing the scheme/host, removing the query and fragment, removing a trailing slash, and rejecting non-`x.com` or reserved `example.invalid` fixture hosts.
-3. `exact_content_tuple`: SHA-256 of the NFC-normalized tuple `(original-or-presenting author identity, visible text, ordered media descriptors, displayed timestamp)`. Text normalization changes CRLF to LF and collapses Unicode whitespace runs, but preserves punctuation, numbers, usernames, negation, and case. The key is unavailable if author, text, or displayed timestamp is missing.
+3. `exact_content_tuple`: SHA-256 of the NFC-normalized tuple `(relation-aware primary author identity, visible text, ordered media descriptors, displayed timestamp)`. For a quote, primary author is the quoting author, then the presenting author; the embedded original is linked evidence and never a fallback tuple identity. For a repost, primary author is the original source, not the reposter. For an ordinary post, selection is presenting, original, quoting, reposting, then unknown. The key is unavailable when the relationship-specific role is missing or when author, text, or displayed timestamp is missing. Text normalization changes CRLF to LF and collapses Unicode whitespace runs, but preserves punctuation, numbers, usernames, negation, and case.
 4. `temporal_layout_continuity`: candidate review only when the same source modality, author evidence, ordered media descriptors, and session are present; adjacent evidence is no more than 2,000 ms apart; normalized text is at least 80 characters; no digits, negation tokens, timestamps, handles, or media differ; and normalized Unicode-code-point Levenshtein similarity is at least 0.98, where `similarity = 1 - edit_distance / max(length_a, length_b)`. It is never an automatic merge for OCR-only evidence—`review_required` remains true until a human decision is recorded. Implementations may use a threshold-banded edit-distance algorithm but must produce the same accept/reject result.
 5. `singleton`: no merge.
 
@@ -68,6 +68,8 @@ The collector has no tool surface. The local analyzer uses typed data and valida
 
 Imports reject the entire packet before persistence when any field name or structural context represents passwords, cookies, authorization headers, bearer/session/CSRF tokens, browser profiles, local/session storage, HAR content, direct messages, notifications, email/account settings, payment forms, or unrelated window content. Values matching credential canaries also reject even under an innocuous key. Errors return a category such as `REJECTED_CREDENTIAL_FIELD` or `REJECTED_PRIVATE_SURFACE`; logs and exceptions never echo the field value.
 
+Credential-name rejection explicitly includes `api_key`, `access_token`, `refresh_token`, `client_secret`, `private_key`, authorization/auth tokens, and separator variants. Value rejection independently detects bearer-like and PEM/private-key-like material. The authored negative-control table exercises each category and requires zero complete-canary echoes; benign fields such as `token_count` remain accepted.
+
 Email addresses or personal identifiers inside an otherwise valid user-supplied post are not credential fields, but they are tagged sensitive and omitted or replaced in sanitized export. Repository fixtures use invented values and reserved domains only.
 
 ## Sanitized export
@@ -78,7 +80,7 @@ Sanitized export is allowlist-based and explicit. It emits schema version, expor
 - assigns deterministic export-scoped `author-001` values based on sorted local IDs, using no reusable salt or cross-export stable identifier;
 - reduces timestamps to calendar date or omits them when unnecessary;
 - removes URL userinfo, fragments, and query parameters;
-- neutralizes spreadsheet formula prefixes and escapes Markdown/HTML control characters at render time;
+- neutralizes spreadsheet formula prefixes in every retained summary before export by prepending one ASCII apostrophe when the first non-whitespace character is `=`, `+`, `-`, or `@`; it preserves all original whitespace and content, records the replacement in the redaction manifest, and separately escapes Markdown/HTML control characters at render time;
 - records every omitted, replaced, pseudonymized, coarsened, or query-stripped field by JSON Pointer and reason.
 
 The exporter fails closed if a required manifest entry is missing, a rejected secret appears anywhere, a URL is not HTTPS, a platform identifier survives, or output differs from its deterministic representation. Free-text summaries receive a privacy warning because redaction cannot prove anonymity from semantic clues.

@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "cases": [
+    {
+      "name": "quote-authors-sharing-one-original",
+      "relationship_kind": "quotes",
+      "authors_left": [
+        {"local_author_id": "quote-author-a", "platform_author_id": "synthetic-quote-author-a", "role": "quoting"},
+        {"local_author_id": "shared-original", "platform_author_id": "synthetic-shared-original", "role": "original"}
+      ],
+      "authors_right": [
+        {"local_author_id": "quote-author-b", "platform_author_id": "synthetic-quote-author-b", "role": "quoting"},
+        {"local_author_id": "shared-original", "platform_author_id": "synthetic-shared-original", "role": "original"}
+      ],
+      "expected_primary_left": "synthetic-quote-author-a",
+      "expected_primary_right": "synthetic-quote-author-b",
+      "expected_automatic_merge": false
+    },
+    {
+      "name": "reposts-sharing-one-original",
+      "relationship_kind": "repost_of",
+      "authors_left": [
+        {"local_author_id": "reposter-a", "platform_author_id": "synthetic-reposter-a", "role": "reposting"},
+        {"local_author_id": "shared-original", "platform_author_id": "synthetic-shared-original", "role": "original"}
+      ],
+      "authors_right": [
+        {"local_author_id": "reposter-b", "platform_author_id": "synthetic-reposter-b", "role": "reposting"},
+        {"local_author_id": "shared-original", "platform_author_id": "synthetic-shared-original", "role": "original"}
+      ],
+      "expected_primary_left": "synthetic-shared-original",
+      "expected_primary_right": "synthetic-shared-original",
+      "expected_automatic_merge": true
+    }
+  ]
+}

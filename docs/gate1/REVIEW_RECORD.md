@@ -3,7 +3,7 @@
 ## Reviewed baseline and scope
 
 - Baseline: Gate 0 merge commit `9124a7b3804a95d1eda2621800d8cf82941b2869` on `main`.
-- Change: Gate 1 documentation, seven versioned schemas, two machine-readable extension contracts, nine authored-synthetic fixture files plus their provenance manifest, and a standard-library acceptance runner.
+- Change: Gate 1 documentation, seven versioned schemas, four machine-readable extension/browser-boundary contracts, ten authored-synthetic fixture files plus their provenance manifest, and a standard-library acceptance runner.
 - Explicitly absent: live X access, authenticated browser use, real capture data, extension installation, collector/OCR/database production code, third-party packages, paid APIs, telemetry, account actions, package publication, and release/merge activity.
 - Policy evidence: the same-day Gate 0 primary-source research was rechecked for architectural consistency without reopening X; the result and future refresh trigger are in the [Policy Recheck](POLICY_RECHECK.md).
 
@@ -13,18 +13,19 @@
 
 - documentation, relative links, footnotes, decision content, matrix arithmetic, and repository policy: pass;
 - seven JSON Schemas, eleven required shared definitions, and eight complete examples: pass;
-- nine authored-synthetic fixture SHA-256 values and complete manifest coverage: pass;
+- ten authored-synthetic fixture SHA-256 values and complete manifest coverage: pass;
 - DOM canonical/organic/promoted/ambiguous counts `5/3/1/1`: pass;
 - recording canonical/organic/promoted/ambiguous counts `3/2/0/1`: pass;
 - forty-two reordered deduplication runs: identical;
-- platform-ID, canonical-permalink and exact-content-tuple merges: pass;
+- platform-ID, canonical-permalink and relation-aware exact-content-tuple merges: pass;
+- quote collision: two quoting authors sharing one embedded original remain distinct; repost collision: fallback attributes the shared original source;
 - numeric, negation, author, time, promotion and media conflict blocks: pass;
 - near-OCR evidence: review only, never automatic merge;
 - four analysis examples, priority arithmetic, and seven follow-threshold boundaries: pass;
 - injection handoff: quoted data, empty tools, all authority false;
-- synthetic credential packet: rejected before persistence with zero complete-canary echoes;
-- sanitized JSON: byte-for-byte golden match with fifteen redaction-manifest entries;
-- exact MV3 permission proposal, twelve hard stops, six visibility edges, malformed/depth/count/size limits, post-stop cleanup, and all-zero forbidden collector effects: pass;
+- nine synthetic credential/private-surface packets: rejected before persistence with zero complete-canary echoes; benign detector control: accepted;
+- sanitized JSON: byte-for-byte golden match with sixteen redaction-manifest entries, including explicit retained-summary formula neutralization;
+- source/origin cross-invariants, separate production/static and synthetic/test-only MV3 contracts, production non-promotion negative controls, twelve hard stops, six visibility edges, malformed/depth/count/size limits, post-stop cleanup, and all-zero forbidden collector effects: pass;
 - private-artifact suffix, real numeric X status URL, local absolute path, undeclared dependency, notice, JSON/Python/shell syntax, and diff-whitespace checks: pass.
 
 ## Security, privacy, and safety review
@@ -38,7 +39,7 @@ The result is a reviewed specification, not proof of a production implementation
 - JSON Schema cannot enforce trusted producer ownership, content digests, cross-record referential integrity, or all semantic classification gates; implementation must enforce them before persistence.
 - SQLite secure deletion, WAL checkpointing, backups, filesystem snapshots and SSD behavior need synthetic temporary-database tests and cannot support a cryptographic-erasure claim.
 - Media decoding, frame extraction, OCR, report rendering and extension code do not exist yet, so their attack surface and resource behavior are unmeasured.
-- Browser integration must prove the manifest diff, outbound-network denial, no account/input events, post-stop teardown and accessibility in an isolated synthetic profile.
+- Browser integration must prove reserved-host loopback mapping, outbound-network denial, no live X navigation, no account/input events, post-stop teardown and accessibility in an isolated synthetic profile; the production proposal remains static-only and ungranted.
 - Dependency, lockfile, notice, license, advisory and SBOM evidence remains pending until a component is actually proposed for adoption.
 - Passing synthetic tests does not authorize live X collection or reduce the documented Terms/account-enforcement risk.
 

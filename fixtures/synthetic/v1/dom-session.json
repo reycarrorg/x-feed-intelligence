@@ -6,7 +6,7 @@
     "source": "synthetic_dom",
     "started_at": "2030-01-02T10:00:00Z",
     "ended_at": "2030-01-02T10:05:00Z",
-    "origin": "https://x.com",
+    "origin": "https://fixture.example.invalid",
     "collector_version": "fixture-collector-1",
     "privacy_profile": "default_local",
     "limits": {"max_candidates": 250, "max_duration_seconds": 1800, "max_packet_bytes": 5242880}
@@ -135,5 +135,5 @@
     {"event_code": "OBSERVATION_ACCEPTED", "at": "2030-01-02T10:00:00Z", "safe_detail_code": "COUNT_ONLY"},
     {"event_code": "INJECTION_CONTENT", "at": "2030-01-02T10:04:00Z", "safe_detail_code": "INJECTION_CONTENT"}
   ],
-  "content_digest": "sha256:f140dfdae4ecc916744fb166ac2c80d76c1cb56fb8d3774e45e70d8fcbd9abee"
+  "content_digest": "sha256:67a57445aedba9af3ac1e99561e87274972ef8c5bac7780450d06d6a44d7ac57"
 }

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "X Feed Intelligence Passive Collector (proposal)",
   "version": "0.1.0",
-  "description": "Synthetic-test-only proposal for explicit, visible, passive collection.",
+  "description": "Unexecuted production proposal for explicit, visible, passive collection; static inspection only through Gate 2.",
   "permissions": ["storage", "scripting"],
   "optional_host_permissions": ["https://x.com/*"],
   "action": {

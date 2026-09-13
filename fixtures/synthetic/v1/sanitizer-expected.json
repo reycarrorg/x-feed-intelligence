@@ -30,7 +30,7 @@
     {
       "post": "post-002",
       "author": "author-002",
-      "summary": "An invented quote adds a reproducibility caveat.",
+      "summary": "'=HYPERLINK(\"https://unsafe.example.invalid\",\"Invented quote\")",
       "classification": "B_PROMISING_VERIFY",
       "score": {
         "relevance": 4,
@@ -140,12 +140,18 @@
       "replacement": null
     },
     {
+      "json_pointer": "/posts/1/summary",
+      "action": "replace",
+      "reason_code": "formula_injection",
+      "replacement": "'=HYPERLINK(\"https://unsafe.example.invalid\",\"Invented quote\")"
+    },
+    {
       "json_pointer": "/verification_sources/0/url",
       "action": "strip_query",
       "reason_code": "tracking_parameter",
       "replacement": "https://research.example.invalid/releases/specification"
     }
   ],
-  "content_digest": "sha256:5e86f5c2ef93556a05c4e0ac8d3b10033ca043f6fcf85617ccd518f68f1aab8f",
+  "content_digest": "sha256:4108c8acc132e3a90b42bce83b29bddfdeb968eed81733d61f59b5a4f1453aea",
   "privacy_warning": "Minimized synthetic export; prose can still contain contextual identity clues."
 }

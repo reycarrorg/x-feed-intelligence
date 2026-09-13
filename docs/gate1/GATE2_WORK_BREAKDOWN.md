@@ -26,11 +26,11 @@ Implement metadata preflight, explicit crop selection, bounded candidate-frame e
 
 Exit: generated synthetic recording fixtures meet 0.95 precision, 0.90 recall and 1.00 unambiguous relationship/ad separation; worker/disk/time limits stop safely; supplied recordings require explicit user selection and never enter Git/CI.
 
-### G2.4 — Passive extension against local synthetic pages only
+### G2.4 — Non-distributable browser harness against reserved synthetic origin
 
-Implement the exact MV3 proposal, user-driven lifecycle, isolated parser, visibility/mutation behavior, bounded queue and explicit JSON export. Adopt WXT/Playwright only through the dependency gate. Tests use a fresh isolated profile and local fixture server with outbound network denied; they must never navigate to X.
+Keep the production MV3 proposal as a static permission/bundle-review target only: do not grant or exercise its optional X permission. Implement browser integration with the distinct `TEST ONLY` / `NON-DISTRIBUTABLE` manifest, user-driven lifecycle, isolated parser, visibility/mutation behavior, bounded queue and explicit JSON export. Map `https://fixture.example.invalid` to an ephemeral loopback fixture server in a fresh isolated profile with outbound network denied. Adopt WXT/Playwright only through the dependency gate. The harness must never contain or navigate to X, Twitter, or X API origins.
 
-Exit: generated manifest equals the approved capability set; every hard-stop fixture is 1.00; forbidden effect count is zero; post-stop references/events are zero; DOM precision/recall meet 0.99/0.98; accessibility controls pass automated and manual review.
+Exit: the production proposal passes static inspection without being loaded; the runnable manifest equals the synthetic-only capability set; positive and negative promotion-guard controls prove test origins, files, and markers cannot enter a production candidate; every hard-stop fixture is 1.00; forbidden effect count is zero; post-stop references/events are zero; DOM precision/recall meet 0.99/0.98; accessibility controls pass automated and manual review.
 
 ### G2.5 — Integration, resource measurement, package candidate
 

@@ -186,7 +186,7 @@
       "properties": {
         "json_pointer": {"type": "string", "pattern": "^/"},
         "action": {"type": "string", "enum": ["omit", "pseudonymize", "coarsen", "strip_query", "replace"]},
-        "reason_code": {"type": "string", "enum": ["credential", "direct_message", "notification", "email", "account_identifier", "platform_identifier", "media", "precise_time", "tracking_parameter", "free_text_identity", "unrelated_private_data"]},
+        "reason_code": {"type": "string", "enum": ["credential", "direct_message", "notification", "email", "account_identifier", "platform_identifier", "media", "precise_time", "tracking_parameter", "formula_injection", "free_text_identity", "unrelated_private_data"]},
         "replacement": {"type": ["string", "null"], "maxLength": 256}
       }
     }

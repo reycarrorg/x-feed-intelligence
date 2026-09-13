@@ -1,8 +1,8 @@
 # Passive MV3 Permission and Lifecycle Contract
 
-## Exact manifest proposal
+## Two deliberately separate manifest contracts
 
-The machine-readable proposal is [`contracts/v1/manifest.proposal.json`](../../contracts/v1/manifest.proposal.json). It contains exactly two ordinary permissions—`storage` and `scripting`—and one optional host permission, `https://x.com/*`.
+The unexecuted production proposal is [`contracts/v1/manifest.proposal.json`](../../contracts/v1/manifest.proposal.json). It contains exactly two ordinary permissions—`storage` and `scripting`—and one optional host permission, `https://x.com/*`. Through Gate 2 it is inspected statically only: it is not granted, exercised, browser-tested, packaged for distribution, or installed.
 
 - `storage` holds configuration and a bounded unsaved synthetic/session queue. It does not authorize X page storage or browser history access.
 - `scripting` permits registration and removal of the packaged isolated content script only after the optional host grant.
@@ -12,6 +12,10 @@ The machine-readable proposal is [`contracts/v1/manifest.proposal.json`](../../c
 - The extension CSP permits packaged scripts from `self` and prohibits objects and base-URL rewriting.
 
 The proposal intentionally omits `activeTab`, `tabs`, `downloads`, `cookies`, `webRequest`, `declarativeNetRequest`, `debugger`, `clipboardRead`, `clipboardWrite`, `notifications`, `alarms`, `unlimitedStorage`, `nativeMessaging`, static `content_scripts`, all required host permissions, X API hosts, legacy Twitter hosts, localhost, and model-provider hosts.
+
+Browser integration uses the separate [`manifest.synthetic-test-only.json`](../../contracts/v1/manifest.synthetic-test-only.json) under the machine-readable [browser test boundary](../../contracts/v1/browser-test-boundary.json). That manifest has one required host—the reserved `https://fixture.example.invalid/*` origin—one isolated static test script, no X/Twitter/API origin, and conspicuous `TEST ONLY` and `NON-DISTRIBUTABLE` markers. The test runner maps the reserved hostname to an ephemeral loopback fixture server inside a fresh isolated profile while outbound networking is denied. It never uses the production proposal as the runnable integration manifest.
+
+The promotion guard rejects any production candidate containing the reserved test origin, test-only markers, `manifest.synthetic-test-only.json`, `synthetic-harness.js`, or the authored fixture tree. Gate 2 must execute both positive and negative controls for this rule. This makes test capability mechanically non-promotable instead of relying on naming or reviewer memory.
 
 ## Machine state
 
@@ -28,7 +32,7 @@ Any armed/capture state -- hard stop --> ERROR -- acknowledge --> INACTIVE
 
 Only the user can request arm, start, export/discard, stop, disarm, or acknowledge an error. The extension never starts merely because an approved tab opens. Granting host permission produces `ARMED`, not `CAPTURING`.
 
-## Capture predicates
+## Future production capture predicates
 
 An observation is eligible only when all predicates hold simultaneously:
 
@@ -52,4 +56,4 @@ No failure path may suggest another account, alternate IP, retry loop, headless/
 
 Export is a deliberate user action that serializes the bounded envelope and computes a SHA-256 digest locally. It does not imply a successful analyzer import. Stop detaches runtime objects. Disarm unregisters the script; host-permission revocation is separately respected. Clearing unsaved data after revocation needs an extension-local confirmation so a permission change does not silently destroy a user draft.
 
-Through Gate 2, any implementation of this proposal may run only against local authored synthetic pages in an isolated test profile. The exact optional X permission may be represented in the build for manifest inspection, but it must not be granted or exercised on the live origin.
+Through Gate 2, only the separately marked synthetic harness may execute in a browser, and only at `https://fixture.example.invalid` under the boundary above. The production proposal remains an ungranted static artifact. Live X needs a separately authorized future gate and a new source/schema version; synthetic session schema v1 cannot truthfully encode `https://x.com` as its collection origin.

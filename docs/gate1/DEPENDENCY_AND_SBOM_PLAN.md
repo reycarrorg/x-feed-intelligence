@@ -27,9 +27,9 @@ No floating versions, git branches, curl-pipe-shell installers, remote scripts, 
 - Start the analyzer and schema validator with the standard library and platform SQLite. Do not add an ORM until measured complexity justifies it.
 - Invoke a separately installed FFmpeg only after version/configuration probing, resource sandboxing, malicious-media tests, and user-facing availability diagnostics. Bundling requires a distinct LGPL/GPL/nonfree review.
 - Use Apple Vision through the platform SDK on macOS; record deployment target and API availability.
-- Defer WXT and Playwright until the synthetic extension slice needs them. If adopted, pin exact versions, disable unnecessary install downloads/scripts, inventory transitives, keep Playwright local-fixture-only, and inspect the emitted manifest/bundle.
+- Defer WXT and Playwright until the synthetic extension slice needs them. If adopted, pin exact versions, disable unnecessary install downloads/scripts, inventory transitives, keep Playwright on the isolated reserved-origin harness with outbound traffic denied, and inspect both emitted manifests/bundles. The production proposal is static-only through Gate 2; packaging must fail if the reserved test origin, test-only markers, harness script/manifest, or fixture tree appears in a production candidate.
 - OpenCV, PySceneDetect and GRDB.swift require benchmark evidence. Tesseract remains on hold. All rejected Gate 0 projects remain prohibited.
 
 ## CI evidence
 
-The dependency job must emit an exact lockfile digest, notice-entry count, SBOM component count, vulnerability-source/date record, and manifest/bundle findings. An advisory scan with no findings is not proof of safety. CI must not upload raw fixtures beyond the authored synthetic corpus or any local report/database.
+The dependency job must emit an exact lockfile digest, notice-entry count, SBOM component count, vulnerability-source/date record, separate production/test manifest findings, and promotion-guard results including negative controls. An advisory scan with no findings is not proof of safety. CI must not upload raw fixtures beyond the authored synthetic corpus or any local report/database.
