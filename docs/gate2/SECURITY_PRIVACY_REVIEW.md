@@ -21,4 +21,3 @@ No unresolved critical or high security/privacy finding remains. No medium or lo
 ## Residual risk and unverified tiers
 
 Actual isolated-browser MV3 execution is unavailable because no reviewed browser binary is installed and downloading one would require a dependency adoption decision. The production proposal was never loaded or granted. Apple Vision exercised only an authored temporary movie. The source package is reproducible, but a compiled universal binary, signing, notarization, browser-store review, public distribution, live X compatibility, real-recording accuracy, filesystem snapshot erasure, and physical interoperability are not verified.
-

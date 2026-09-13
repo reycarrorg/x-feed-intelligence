@@ -13,4 +13,3 @@ The earliest future supervised comparison is exactly bounded as follows and rema
 7. Revoke the exact host permission, uninstall the test build from the dedicated profile, and retain only the user-approved local evidence under the retention contract. Do not publish captures, usernames, post text, profile data, or account identifiers.
 
 Failure of any prerequisite or threshold ends the test without retry, widening permission, alternate account/IP, copied profile, stealth, private endpoint, automated input, or fallback service. This document is a future test protocol, not permission to perform it.
-

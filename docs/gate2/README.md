@@ -65,4 +65,3 @@ The existing CI-only `actions/checkout` dependency is pinned to v4.4.0 revision 
 - Primary-source verification records are supported, but automatic external verification is absent by design. Model handoff is optional, local-file-only, and has no tool or navigation capability.
 - SQLite purge cannot promise cryptographic erasure from SSD remapping, snapshots, older backups, synchronized copies, or prior exports.
 - Gate 2 synthetic success does not authorize Gate 3 or reduce the documented Terms/account-enforcement risk.
-

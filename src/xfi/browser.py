@@ -20,4 +20,3 @@ def browser_runtime_preflight() -> dict:
     if explicit and Path(explicit).is_file() and os.access(explicit, os.X_OK):
         return {"status": "REVIEWED_BROWSER_DECLARED", "executable": str(Path(explicit).resolve()), "execution_authorized": False, "reason": "Declaration alone does not satisfy dependency review or authorize execution."}
     return {"status": "BROWSER_RUNTIME_UNAVAILABLE", "executable": None, "execution_authorized": False, "reason": "No reviewed isolated MV3 browser runtime is present; no browser was downloaded or ordinary profile used."}
-
