@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0.0",
+  "session": {
+    "session_id": "synthetic-recording-001",
+    "schema_version": "1.0.0",
+    "source": "synthetic_recording",
+    "started_at": "2030-02-03T12:00:00Z",
+    "ended_at": "2030-02-03T12:01:00Z",
+    "origin": null,
+    "collector_version": "fixture-recorder-1",
+    "privacy_profile": "default_local",
+    "limits": {"max_candidates": 250, "max_duration_seconds": 1800, "max_packet_bytes": 5242880}
+  },
+  "observations": [
+    {
+      "observation_id": "rec-observation-000", "session_id": "synthetic-recording-001", "appearance_index": 0, "top_level": true, "visibility_ratio": 0.9, "document_visible": true,
+      "platform_post_id": null, "canonical_permalink": null,
+      "visible_text": "This invented long recording card contains stable evidence for a local workshop on day 7 with careful review notes and no external action.",
+      "displayed_timestamp": "12:00",
+      "authors": [{"local_author_id": "author-recorder", "platform_author_id": null, "display_name": "Synthetic Recorder", "handle": "synthetic_recorder", "role": "original", "identity_confidence": 0.92, "uncertainty_codes": []}],
+      "relationships": [], "media": [], "promotion": {"status": "organic", "evidence": ["none"], "confidence": 0.95},
+      "provenance": [{"provenance_id": "prov-rec-000", "modality": "synthetic_recording", "collector_version": "fixture-recorder-1", "parser_or_ocr_version": "fixture-ocr-1", "field": "visible_text", "observed_at": "2030-02-03T12:00:00Z", "video_time_ms": 1000, "crop_xywh": [100, 20, 600, 300], "confidence": 0.94}],
+      "uncertainty": [], "input_location": {"viewport_time_ms": null, "video_time_ms": 1000, "crop_xywh": [100, 20, 600, 300]}
+    },
+    {
+      "observation_id": "rec-observation-001", "session_id": "synthetic-recording-001", "appearance_index": 1, "top_level": true, "visibility_ratio": 0.8, "document_visible": true,
+      "platform_post_id": null, "canonical_permalink": null,
+      "visible_text": "This invented long recording card contains stable evidence for a local workshop on day 7 with careful review notes and no external action.",
+      "displayed_timestamp": "12:00",
+      "authors": [{"local_author_id": "author-recorder", "platform_author_id": null, "display_name": "Synthetic Recorder", "handle": "synthetic_recorder", "role": "original", "identity_confidence": 0.92, "uncertainty_codes": []}],
+      "relationships": [], "media": [], "promotion": {"status": "organic", "evidence": ["none"], "confidence": 0.95},
+      "provenance": [{"provenance_id": "prov-rec-001", "modality": "synthetic_recording", "collector_version": "fixture-recorder-1", "parser_or_ocr_version": "fixture-ocr-1", "field": "visible_text", "observed_at": "2030-02-03T12:00:01Z", "video_time_ms": 2200, "crop_xywh": [100, 24, 600, 300], "confidence": 0.93}],
+      "uncertainty": [], "input_location": {"viewport_time_ms": null, "video_time_ms": 2200, "crop_xywh": [100, 24, 600, 300]}
+    },
+    {
+      "observation_id": "rec-observation-002", "session_id": "synthetic-recording-001", "appearance_index": 2, "top_level": true, "visibility_ratio": 0.8, "document_visible": true,
+      "platform_post_id": null, "canonical_permalink": null,
+      "visible_text": "This invented long recording card contains stable evidence for a local workshop on day 9 with careful review notes and no external action.",
+      "displayed_timestamp": "12:00",
+      "authors": [{"local_author_id": "author-recorder", "platform_author_id": null, "display_name": "Synthetic Recorder", "handle": "synthetic_recorder", "role": "original", "identity_confidence": 0.92, "uncertainty_codes": []}],
+      "relationships": [], "media": [], "promotion": {"status": "organic", "evidence": ["none"], "confidence": 0.95},
+      "provenance": [{"provenance_id": "prov-rec-002", "modality": "synthetic_recording", "collector_version": "fixture-recorder-1", "parser_or_ocr_version": "fixture-ocr-1", "field": "visible_text", "observed_at": "2030-02-03T12:00:03Z", "video_time_ms": 3500, "crop_xywh": [100, 28, 600, 300], "confidence": 0.92}],
+      "uncertainty": [{"code": "NUMERIC_CONFLICT", "field": "visible_text", "severity": "review", "requires_review": true, "safe_detail": "A numeric token differs from an adjacent candidate."}],
+      "input_location": {"viewport_time_ms": null, "video_time_ms": 3500, "crop_xywh": [100, 28, 600, 300]}
+    },
+    {
+      "observation_id": "rec-observation-003", "session_id": "synthetic-recording-001", "appearance_index": 3, "top_level": true, "visibility_ratio": 0.55, "document_visible": true,
+      "platform_post_id": null, "canonical_permalink": null, "visible_text": "Part… maybe", "displayed_timestamp": null,
+      "authors": [{"local_author_id": "author-unknown", "platform_author_id": null, "display_name": null, "handle": null, "role": "unknown", "identity_confidence": 0.2, "uncertainty_codes": ["OCR_AUTHOR_UNREADABLE"]}],
+      "relationships": [], "media": [], "promotion": {"status": "ambiguous", "evidence": ["layout_marker"], "confidence": 0.3},
+      "provenance": [{"provenance_id": "prov-rec-003", "modality": "synthetic_recording", "collector_version": "fixture-recorder-1", "parser_or_ocr_version": "fixture-ocr-1", "field": "visible_text", "observed_at": "2030-02-03T12:00:05Z", "video_time_ms": 5000, "crop_xywh": [100, 30, 600, 150], "confidence": 0.25}],
+      "uncertainty": [{"code": "OCR_PARTIAL", "field": "visible_text", "severity": "blocking", "requires_review": true, "safe_detail": "Text and identity are materially unreadable."}],
+      "input_location": {"viewport_time_ms": null, "video_time_ms": 5000, "crop_xywh": [100, 30, 600, 150]}
+    }
+  ],
+  "collection_events": [{"event_code": "SESSION_STARTED", "at": "2030-02-03T12:00:00Z", "safe_detail_code": null}, {"event_code": "STOPPED_USER", "at": "2030-02-03T12:01:00Z", "safe_detail_code": null}],
+  "content_digest": "sha256:0b963616789ac351dfbf6399b415a4f8105e65758e80bf9866f590851f892354"
+}

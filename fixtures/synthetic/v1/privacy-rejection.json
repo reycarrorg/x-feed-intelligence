@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "cases": [
+    {"name": "authorization-header", "packet": {"authorization_header": "Bearer synthetic-auth-canary"}, "expected_category": "REJECTED_CREDENTIAL_FIELD", "must_not_echo": "synthetic-auth-canary"},
+    {"name": "api-key", "packet": {"api_key": "synthetic-api-key-canary"}, "expected_category": "REJECTED_CREDENTIAL_FIELD", "must_not_echo": "synthetic-api-key-canary"},
+    {"name": "access-token", "packet": {"access_token": "synthetic-access-token-canary"}, "expected_category": "REJECTED_CREDENTIAL_FIELD", "must_not_echo": "synthetic-access-token-canary"},
+    {"name": "refresh-token", "packet": {"refresh_token": "synthetic-refresh-token-canary"}, "expected_category": "REJECTED_CREDENTIAL_FIELD", "must_not_echo": "synthetic-refresh-token-canary"},
+    {"name": "client-secret", "packet": {"client_secret": "synthetic-client-secret-canary"}, "expected_category": "REJECTED_CREDENTIAL_FIELD", "must_not_echo": "synthetic-client-secret-canary"},
+    {"name": "private-key-field", "packet": {"private_key": "-----BEGIN SYNTHETIC PRIVATE KEY-----\nsynthetic-private-key-canary\n-----END SYNTHETIC PRIVATE KEY-----"}, "expected_category": "REJECTED_CREDENTIAL_FIELD", "must_not_echo": "synthetic-private-key-canary"},
+    {"name": "private-key-value", "packet": {"payload": "-----BEGIN SYNTHETIC PRIVATE KEY-----\nsynthetic-value-key-canary\n-----END SYNTHETIC PRIVATE KEY-----"}, "expected_category": "REJECTED_CREDENTIAL_VALUE", "must_not_echo": "synthetic-value-key-canary"},
+    {"name": "bearer-value", "packet": {"payload": "Bearer synthetic-value-canary"}, "expected_category": "REJECTED_CREDENTIAL_VALUE", "must_not_echo": "synthetic-value-canary"},
+    {"name": "direct-message", "packet": {"direct_messages": [{"sender": "invented", "text": "Synthetic private content."}]}, "expected_category": "REJECTED_PRIVATE_SURFACE", "must_not_echo": "Synthetic private content."}
+  ]
+}

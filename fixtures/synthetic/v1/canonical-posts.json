@@ -1,0 +1,49 @@
+[
+  {
+    "local_post_id": "local-post-100",
+    "platform_post_id": "synthetic-post-100",
+    "canonical_permalink": "https://x.com/example_alpha/status/synthetic-post-100",
+    "observation_ids": ["dom-observation-000", "dom-observation-001"],
+    "authors": [
+      {
+        "local_author_id": "author-alpha",
+        "platform_author_id": "synthetic-author-1",
+        "display_name": "Example Alpha",
+        "handle": "example_alpha",
+        "role": "original",
+        "identity_confidence": 1.0,
+        "uncertainty_codes": []
+      }
+    ],
+    "relationships": [
+      {
+        "kind": "source_of",
+        "source_local_post_id": "local-post-200",
+        "source_platform_post_id": "synthetic-post-200",
+        "confidence": 1.0,
+        "provenance_ids": ["prov-dom-002"]
+      }
+    ],
+    "media": [
+      {
+        "local_media_id": "media-diagram",
+        "kind": "image",
+        "alt_text": "Synthetic diagram of three labeled boxes",
+        "visible_description": null,
+        "perceptual_fingerprint": "synthetic:diagram-1",
+        "binary_collected": false,
+        "confidence": 1.0,
+        "provenance_ids": ["prov-dom-001"]
+      }
+    ],
+    "promotion": {"status": "organic", "evidence": ["none"], "confidence": 1.0},
+    "visible_text": "A synthetic project published a deterministic local parser with a reviewable specification.",
+    "deduplication": {
+      "method": "platform_id",
+      "confidence": 1.0,
+      "review_required": false,
+      "evidence_observation_ids": ["dom-observation-000", "dom-observation-001"]
+    },
+    "uncertainty": []
+  }
+]
