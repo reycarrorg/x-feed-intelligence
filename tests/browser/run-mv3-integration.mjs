@@ -22,7 +22,17 @@ const outputPath = outputIndex >= 0 ? resolve(process.argv[outputIndex + 1]) : n
 function sha256(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
 function requireValue(value, message) { if (!value) throw new Error(message); }
 function listen(server) { return new Promise((resolvePromise, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => resolvePromise(server.address().port)); }); }
-function close(server) { return new Promise((resolvePromise) => server.close(() => resolvePromise())); }
+function trackConnections(server, sockets, evidence) {
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("error", (error) => { if (error && error.code === "ECONNRESET") evidence.connection_resets += 1; else evidence.socket_errors += 1; });
+    socket.on("close", () => sockets.delete(socket));
+  });
+}
+function close(server, sockets) {
+  for (const socket of sockets) socket.destroy();
+  return new Promise((resolvePromise) => server.close(() => resolvePromise()));
+}
 async function clickControl(popup, label) {
   await popup.getByRole("button", {name: label}).focus();
   await popup.keyboard.press("Enter");
@@ -45,27 +55,36 @@ execFileSync("/usr/bin/openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes
 const fixtureHtml = readFileSync(join(extensionPath, "fixture.html"));
 let fixtureRequests = 0;
 let servedDurationMs = 30000;
+let servedPacketLimit = 5242880;
 const httpsServer = createHttpsServer({key: readFileSync(key), cert: readFileSync(cert)}, (request, response) => {
   if (request.url !== "/") { response.writeHead(404, {"content-type": "text/plain"}); response.end("not found"); return; }
   fixtureRequests += 1;
   response.writeHead(200, {"content-type": "text/html; charset=utf-8", "cache-control": "no-store"});
-  response.end(fixtureHtml.toString("utf8").replace('data-fixture-max-duration-ms="30000"', `data-fixture-max-duration-ms="${servedDurationMs}"`));
+  response.end(fixtureHtml.toString("utf8").replace('data-fixture-max-duration-ms="30000"', `data-fixture-max-duration-ms="${servedDurationMs}"`).replace('data-fixture-max-packet-bytes="5242880"', `data-fixture-max-packet-bytes="${servedPacketLimit}"`));
 });
+const socketEvidence = {connection_resets: 0, socket_errors: 0};
+const httpsSockets = new Set();
+trackConnections(httpsServer, httpsSockets, socketEvidence);
 const fixturePort = await listen(httpsServer);
 const proxyEvidence = {allowed_fixture_tunnels: 0, denied_requests: 0};
+const proxySockets = new Set();
 const proxy = createTcpServer((client) => {
+  client.on("error", () => {});
   client.once("data", (chunk) => {
     const first = chunk.toString("latin1").split("\r\n", 1)[0];
     if (first === "CONNECT fixture.example.invalid:443 HTTP/1.1") {
       proxyEvidence.allowed_fixture_tunnels += 1;
       const upstream = connectTcp(fixturePort, "127.0.0.1", () => { client.write("HTTP/1.1 200 Connection Established\r\n\r\n"); upstream.write(Buffer.alloc(0)); client.pipe(upstream); upstream.pipe(client); });
-      upstream.on("error", () => client.destroy());
+      proxySockets.add(upstream);
+      upstream.on("close", () => proxySockets.delete(upstream));
+      upstream.on("error", () => { if (!client.destroyed) client.destroy(); });
       return;
     }
     proxyEvidence.denied_requests += 1;
     client.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
   });
 });
+trackConnections(proxy, proxySockets, socketEvidence);
 const proxyPort = await listen(proxy);
 requireValue(!readdirSync(temporary).includes("profile"), "PROFILE_NOT_FRESH");
 
@@ -136,6 +155,23 @@ try {
   requireValue(new Set(reuse.result.observations.map((item) => item.platform_post_id)).has("shared-virtualized-001"), "VIRTUALIZED_REUSE_MISSING");
   await clickControl(popup, "Discard synthetic draft");
 
+  servedPacketLimit = 5242880;
+  await page.reload({waitUntil: "domcontentloaded"});
+  await popup.waitForTimeout(150);
+  await clickControl(popup, "Arm synthetic collector");
+  await clickControl(popup, "Start synthetic capture");
+  await popup.waitForTimeout(400);
+  const boundarySeed = await clickControl(popup, "Export synthetic packet");
+  const exactPacketBytes = Buffer.byteLength(JSON.stringify(boundarySeed.result), "utf8");
+  await page.evaluate((value) => { document.documentElement.setAttribute("data-xfi-test-packet-limit", String(value)); document.dispatchEvent(new Event("XFI_TEST_SET_PACKET_LIMIT")); }, exactPacketBytes);
+  const exactBoundary = await clickControl(popup, "Export synthetic packet");
+  requireValue(exactBoundary.result && Buffer.byteLength(JSON.stringify(exactBoundary.result), "utf8") === exactPacketBytes, "EXACT_PACKET_BOUNDARY_REJECTED");
+  await page.evaluate((value) => { document.documentElement.setAttribute("data-xfi-test-packet-limit", String(value)); document.dispatchEvent(new Event("XFI_TEST_SET_PACKET_LIMIT")); }, exactPacketBytes - 1);
+  const overBoundary = await clickControl(popup, "Export synthetic packet");
+  requireValue(overBoundary.result === null && overBoundary.snapshot.state === "ERROR" && overBoundary.snapshot.events.at(-1).event_code === "PACKET_LIMIT", "OVERSIZED_PACKET_EXPORTED");
+  await clickControl(popup, "Discard synthetic draft");
+
+  servedPacketLimit = 5242880;
   servedDurationMs = 80;
   await page.reload({waitUntil: "domcontentloaded"});
   await popup.waitForTimeout(150);
@@ -146,10 +182,12 @@ try {
   requireValue(timerState.reply.snapshot.state === "ERROR" && timerState.reply.snapshot.events.at(-1).event_code === "DURATION_LIMIT" && timerState.reply.snapshot.timerCount === 0, "ACTUAL_DURATION_TIMER_FAILED");
 
   if (outputPath) writeFileSync(outputPath, JSON.stringify(envelope, null, 2) + "\n", {flag: "wx"});
-  console.log(JSON.stringify({status: "PASS", manifest_version: 3, extension_version: "0.2.0", fresh_profile: true, reserved_host_mapped: true, output_observations: envelope.observations.length, unique_truth_identities: new Set(envelope.observations.map((item) => item.platform_post_id)).size, relationship_edges: envelope.observations.reduce((count, item) => count + item.relationships.length, 0), hidden_canaries_excluded: true, late_content_preserved: true, virtualized_reuse_preserved: true, duration_timer_fired: true, utf8_boundary_exercised: true, teardown_zero: true, post_stop_zero: true, fixture_requests: fixtureRequests, network: proxyEvidence, browser_archive_sha256: expectedArchiveHash, browser_executable_sha256: expectedBrowserHash}));
+  console.log(JSON.stringify({status: "PASS", manifest_version: 3, extension_version: "0.2.0", fresh_profile: true, reserved_host_mapped: true, output_observations: envelope.observations.length, unique_truth_identities: new Set(envelope.observations.map((item) => item.platform_post_id)).size, relationship_edges: envelope.observations.reduce((count, item) => count + item.relationships.length, 0), hidden_canaries_excluded: true, late_content_preserved: true, virtualized_reuse_preserved: true, duration_timer_fired: true, utf8_boundary_exercised: true, exact_full_packet_bytes: exactPacketBytes, exact_packet_allowed: true, oversized_packet_returned: false, teardown_zero: true, post_stop_zero: true, fixture_requests: fixtureRequests, network: proxyEvidence, socket_evidence: socketEvidence, browser_archive_sha256: expectedArchiveHash, browser_executable_sha256: expectedBrowserHash}));
 } finally {
-  if (context) await context.close();
-  await close(proxy);
-  await close(httpsServer);
-  rmSync(temporary, {recursive: true, force: true});
+  try {
+    if (context) await context.close();
+  } finally {
+    await Promise.all([close(proxy, proxySockets), close(httpsServer, httpsSockets)]);
+    rmSync(temporary, {recursive: true, force: true});
+  }
 }

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xfi.analysis import aggregate_authors, analyze_posts, build_model_handoff, validate_analysis
-from xfi.canonical import canonical_bytes, canonicalize, digest, pretty_bytes, primary_author
+from xfi.canonical import canonical_bytes, canonicalize, digest, local_post_id, pretty_bytes, primary_author
 from xfi.errors import StoreError, ValidationError
 from xfi.render import html_escape, markdown_escape, neutralize_formula, private_markdown, sanitize
 from xfi.store import APPLICATION_ID, MIGRATION_CHECKSUM, Store
@@ -44,6 +44,8 @@ def rekey_session(envelope: dict, session_id: str) -> dict:
             provenance_map[old] = new
         for relationship in observation["relationships"]:
             relationship["provenance_ids"] = [provenance_map.get(item, item) for item in relationship.get("provenance_ids", [])]
+        for media in observation["media"]:
+            media["provenance_ids"] = [provenance_map.get(item, item) for item in media.get("provenance_ids", [])]
     value["content_digest"] = digest(value)
     return value
 
@@ -68,6 +70,45 @@ class ValidatorTests(unittest.TestCase):
             with self.subTest(code=code), self.assertRaises(ValidationError) as caught:
                 load_and_validate_envelope(raw, SCHEMAS)
             self.assertEqual(code, caught.exception.code)
+
+    def test_strict_json_duplicate_nonfinite_and_unicode_rejections(self):
+        envelope = load("dom-session.json")
+        valid = canonical_bytes(envelope)
+        cases = [
+            (b'{"schema_version":"1.0.0",' + valid[1:], "REJECTED_DUPLICATE_KEY"),
+            (json.dumps({**envelope, "numeric_canary": float("nan")}, allow_nan=True).encode(), "REJECTED_NONFINITE_NUMBER"),
+            (json.dumps({**envelope, "numeric_canary": float("inf")}, allow_nan=True).encode(), "REJECTED_NONFINITE_NUMBER"),
+            (b'{"schema_version":"\\ud800"}', "REJECTED_UNICODE"),
+            (b"\xff", "REJECTED_SCHEMA"),
+        ]
+        for raw, code in cases:
+            with self.subTest(code=code), self.assertRaises(ValidationError) as caught:
+                load_and_validate_envelope(raw, SCHEMAS)
+            self.assertEqual(code, caught.exception.code)
+            self.assertNotIn("canary", str(caught.exception).casefold())
+
+    def test_relationship_targets_normalize_and_dangling_or_contradictory_reject(self):
+        envelope = load("dom-session.json")
+        posts = canonicalize(envelope["observations"])
+        source = local_post_id("platform_id", "synthetic-post-100")
+        quote = next(post for post in posts if post["platform_post_id"] == "synthetic-post-200")
+        self.assertEqual([("quotes", source)], [(item["kind"], item["source_local_post_id"]) for item in quote["relationships"]])
+        self.assertTrue({item["source_local_post_id"] for post in posts for item in post["relationships"]} <= {post["local_post_id"] for post in posts})
+        dangling = copy.deepcopy(envelope)
+        next(observation for observation in dangling["observations"] if observation["relationships"])["relationships"][0]["source_platform_post_id"] = "missing-platform-post"
+        dangling["content_digest"] = digest(dangling)
+        with self.assertRaises(ValidationError) as missing: load_and_validate_envelope(canonical_bytes(dangling), SCHEMAS)
+        self.assertEqual("REJECTED_REFERENCE", missing.exception.code)
+        contradictory = copy.deepcopy(envelope)
+        next(observation for observation in contradictory["observations"] if observation["relationships"])["relationships"][0]["source_local_post_id"] = local_post_id("platform_id", "synthetic-post-300")
+        contradictory["content_digest"] = digest(contradictory)
+        with self.assertRaises(ValidationError) as conflict: load_and_validate_envelope(canonical_bytes(contradictory), SCHEMAS)
+        self.assertEqual("REJECTED_REFERENCE", conflict.exception.code)
+        dangling_provenance = copy.deepcopy(envelope)
+        next(observation for observation in dangling_provenance["observations"] if observation["media"])["media"][0]["provenance_ids"] = ["missing-provenance"]
+        dangling_provenance["content_digest"] = digest(dangling_provenance)
+        with self.assertRaises(ValidationError) as evidence: load_and_validate_envelope(canonical_bytes(dangling_provenance), SCHEMAS)
+        self.assertEqual("REJECTED_REFERENCE", evidence.exception.code)
 
     def test_bounded_file_read_rejects_before_decode_without_echo(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -151,10 +192,21 @@ class StoreTests(unittest.TestCase):
             reused = next(post for post in store.list_posts("synthetic-dom-002") if post["platform_post_id"] == "synthetic-post-100")
             self.assertEqual(4, len(reused["observation_ids"]))
             self.assertEqual("platform_id", reused["deduplication"]["method"])
+            before_failed_purge = {row[0]: bytes(row[1]) for row in store.connection.execute("SELECT local_post_id,record_json FROM canonical_posts")}
+            with self.assertRaises(StoreError): store.purge_session("synthetic-dom-001", vacuum=False, inject_failure=True)
+            self.assertEqual(before_failed_purge, {row[0]: bytes(row[1]) for row in store.connection.execute("SELECT local_post_id,record_json FROM canonical_posts")})
             first_purge = store.purge_session("synthetic-dom-001", vacuum=False)
             self.assertEqual("PURGE_COMPLETED", first_purge["status"])
             self.assertEqual(5, store.connection.execute("SELECT COUNT(*) FROM canonical_posts").fetchone()[0])
             self.assertEqual(6, store.connection.execute("SELECT COUNT(*) FROM post_observations").fetchone()[0])
+            retained = [json.loads(row[0]) for row in store.connection.execute("SELECT record_json FROM canonical_posts")]
+            retained_json = json.dumps(retained, sort_keys=True)
+            self.assertNotIn("synthetic-dom-001-observation", retained_json)
+            self.assertNotIn("prov-dom-", retained_json)
+            self.assertTrue(all(item.startswith("synthetic-dom-002-observation") for post in retained for item in post["observation_ids"]))
+            self.assertTrue(all(item.startswith("synthetic-dom-002-observation") for post in retained for item in post["deduplication"]["evidence_observation_ids"]))
+            self.assertTrue(all(item.startswith("synthetic-dom-002-provenance") for post in retained for relation in post["relationships"] for item in relation["provenance_ids"]))
+            self.assertTrue(all(item.startswith("synthetic-dom-002-provenance") for post in retained for media in post["media"] for item in media["provenance_ids"]))
             store.purge_session("synthetic-dom-002", vacuum=False)
             self.assertEqual(0, store.connection.execute("SELECT COUNT(*) FROM canonical_posts").fetchone()[0])
 

@@ -13,7 +13,7 @@ from .errors import ValidationError, XFIError
 from .render import atomic_write, private_json, private_markdown, sanitize
 from .recording import ingest as ingest_recording, preflight as preflight_recording
 from .store import Store
-from .validation import load_and_validate_envelope, read_bounded_file
+from .validation import load_and_validate_envelope, read_bounded_file, strict_json_loads
 
 
 def repository_root() -> Path:
@@ -25,10 +25,10 @@ def load_envelope(path: Path) -> dict:
 
 
 def load_json(path: Path, maximum: int = 262_144) -> dict:
-    try:
-        return json.loads(read_bounded_file(path, maximum))
-    except json.JSONDecodeError:
-        raise ValidationError("REJECTED_SCHEMA") from None
+    value = strict_json_loads(read_bounded_file(path, maximum))
+    if not isinstance(value, dict):
+        raise ValidationError("REJECTED_SCHEMA")
+    return value
 
 
 def run(arguments: list[str] | None = None) -> int:

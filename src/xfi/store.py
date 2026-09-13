@@ -10,8 +10,8 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from .canonical import canonical_bytes, canonicalize
-from .errors import StoreError
+from .canonical import canonical_bytes, canonicalize, has_merge_conflict, observation_key
+from .errors import StoreError, ValidationError
 
 APPLICATION_ID = 0x58464931  # XFI1
 SCHEMA_VERSION = 1
@@ -93,51 +93,6 @@ class ImportResult:
     idempotent: bool
 
 
-def _canonical_identity(post: dict) -> bytes:
-    value = json.loads(canonical_bytes(post))
-    value.pop("observation_ids", None)
-    value.pop("deduplication", None)
-    for relationship in value.get("relationships", []):
-        relationship.pop("provenance_ids", None)
-    for media in value.get("media", []):
-        media.pop("provenance_ids", None)
-    return canonical_bytes(value)
-
-
-def _merge_canonical_evidence(existing: dict, incoming: dict) -> dict:
-    merged = dict(existing)
-    observation_ids = sorted(set(existing["observation_ids"]) | set(incoming["observation_ids"]))
-    merged["observation_ids"] = observation_ids
-    merged["deduplication"] = dict(existing["deduplication"])
-    if len(observation_ids) == 1:
-        merged["deduplication"]["method"] = incoming["deduplication"]["method"]
-    elif merged["platform_post_id"]:
-        merged["deduplication"]["method"] = "platform_id"
-    elif merged["canonical_permalink"]:
-        merged["deduplication"]["method"] = "canonical_permalink"
-    else:
-        merged["deduplication"]["method"] = "exact_content_tuple"
-    merged["deduplication"]["confidence"] = max(existing["deduplication"]["confidence"], incoming["deduplication"]["confidence"])
-    merged["deduplication"]["evidence_observation_ids"] = observation_ids
-    incoming_relationships = {(item["kind"], item["source_local_post_id"]): item for item in incoming.get("relationships", [])}
-    relationships = []
-    for item in existing.get("relationships", []):
-        value = dict(item)
-        counterpart = incoming_relationships.get((item["kind"], item["source_local_post_id"]), {})
-        value["provenance_ids"] = sorted(set(item.get("provenance_ids", [])) | set(counterpart.get("provenance_ids", [])))
-        relationships.append(value)
-    merged["relationships"] = relationships
-    incoming_media = {item["local_media_id"]: item for item in incoming.get("media", [])}
-    media_items = []
-    for item in existing.get("media", []):
-        value = dict(item)
-        counterpart = incoming_media.get(item["local_media_id"], {})
-        value["provenance_ids"] = sorted(set(item.get("provenance_ids", [])) | set(counterpart.get("provenance_ids", [])))
-        media_items.append(value)
-    merged["media"] = media_items
-    return merged
-
-
 class Store:
     def __init__(self, path: Path, *, allow_nonlocal_for_test: bool = False):
         self.path = path.resolve()
@@ -196,6 +151,38 @@ class Store:
     def __exit__(self, *_args: object) -> None:
         self.close()
 
+    def _rebuild_canonical_index(self) -> list[dict]:
+        rows = self.connection.execute("SELECT record_json FROM observations ORDER BY session_id,appearance_index,observation_id").fetchall()
+        observations = [json.loads(row[0]) for row in rows]
+        groups: dict[tuple[str, str], list[dict]] = {}
+        for observation in observations:
+            key = observation_key(observation)
+            if key in groups and has_merge_conflict(groups[key], observation, key[0]):
+                raise StoreError("CANONICAL_CONFLICT")
+            groups.setdefault(key, []).append(observation)
+        try:
+            posts = canonicalize(observations)
+        except ValidationError as error:
+            raise StoreError(error.code) from None
+        previous = {row[0]: row[1] for row in self.connection.execute("SELECT local_post_id,record_json FROM canonical_posts")}
+        current = {post["local_post_id"]: canonical_bytes(post) for post in posts}
+        self.connection.execute("DELETE FROM post_observations")
+        for local_id, record in current.items():
+            if local_id in previous:
+                if bytes(previous[local_id]) != record:
+                    self.connection.execute("DELETE FROM analyses WHERE local_post_id=?", (local_id,))
+                self.connection.execute("UPDATE canonical_posts SET record_json=? WHERE local_post_id=?", (record, local_id))
+            else:
+                self.connection.execute("INSERT INTO canonical_posts VALUES (?,?)", (local_id, record))
+        stale = sorted(set(previous) - set(current))
+        if stale:
+            self.connection.execute("DELETE FROM canonical_posts WHERE local_post_id IN (%s)" % ",".join("?" for _ in stale), stale)
+        self.connection.executemany("INSERT INTO post_observations VALUES (?,?)", [
+            (post["local_post_id"], observation_id)
+            for post in posts for observation_id in post["observation_ids"]
+        ])
+        return posts
+
     def import_envelope(self, envelope: dict, *, inject_failure: bool = False) -> ImportResult:
         session = envelope["session"]
         session_id = session["session_id"]
@@ -205,7 +192,6 @@ class Store:
                 raise StoreError("IDEMPOTENCE_DIGEST_CONFLICT")
             count = self.connection.execute("SELECT COUNT(DISTINCT local_post_id) FROM post_observations JOIN observations USING(observation_id) WHERE session_id=?", (session_id,)).fetchone()[0]
             return ImportResult(session_id, count, True)
-        posts = canonicalize(envelope["observations"])
         try:
             self.connection.execute("BEGIN IMMEDIATE")
             self.connection.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?)", (
@@ -217,17 +203,8 @@ class Store:
                 ))
             if inject_failure:
                 raise sqlite3.OperationalError("synthetic injected failure")
-            for post in posts:
-                existing_post = self.connection.execute("SELECT record_json FROM canonical_posts WHERE local_post_id=?", (post["local_post_id"],)).fetchone()
-                if existing_post is None:
-                    self.connection.execute("INSERT INTO canonical_posts VALUES (?,?)", (post["local_post_id"], canonical_bytes(post)))
-                else:
-                    existing_value = json.loads(existing_post[0])
-                    if _canonical_identity(existing_value) != _canonical_identity(post):
-                        raise StoreError("CANONICAL_CONFLICT")
-                    merged = _merge_canonical_evidence(existing_value, post)
-                    self.connection.execute("UPDATE canonical_posts SET record_json=? WHERE local_post_id=?", (canonical_bytes(merged), post["local_post_id"]))
-                self.connection.executemany("INSERT INTO post_observations VALUES (?,?)", [(post["local_post_id"], oid) for oid in post["observation_ids"]])
+            self._rebuild_canonical_index()
+            canonical_count = self.connection.execute("SELECT COUNT(DISTINCT local_post_id) FROM post_observations JOIN observations USING(observation_id) WHERE session_id=?", (session_id,)).fetchone()[0]
             self.connection.commit()
         except StoreError:
             self.connection.rollback()
@@ -235,7 +212,7 @@ class Store:
         except sqlite3.Error:
             self.connection.rollback()
             raise StoreError("IMPORT_ROLLED_BACK") from None
-        return ImportResult(session_id, len(posts), False)
+        return ImportResult(session_id, canonical_count, False)
 
     def add_analysis(self, record: dict) -> None:
         try:
@@ -270,15 +247,14 @@ class Store:
 
     def purge_session(self, session_id: str, *, vacuum: bool = True, free_space_override: int | None = None, inject_failure: bool = False, temp_paths: list[Path] | None = None, temp_root: Path | None = None) -> dict:
         child_ids = [row[0] for row in self.connection.execute("SELECT observation_id FROM observations WHERE session_id=?", (session_id,))]
-        post_ids = [row[0] for row in self.connection.execute("SELECT DISTINCT local_post_id FROM post_observations JOIN observations USING(observation_id) WHERE session_id=?", (session_id,))]
         try:
             self.connection.execute("BEGIN IMMEDIATE")
             self.connection.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
-            self.connection.execute("DELETE FROM canonical_posts WHERE local_post_id IN (%s) AND NOT EXISTS (SELECT 1 FROM post_observations WHERE post_observations.local_post_id=canonical_posts.local_post_id)" % (",".join("?" for _ in post_ids) or "NULL"), post_ids)
+            self._rebuild_canonical_index()
             if inject_failure:
                 raise sqlite3.OperationalError("synthetic injected failure")
             self.connection.commit()
-        except sqlite3.Error:
+        except (sqlite3.Error, StoreError):
             self.connection.rollback()
             raise StoreError("PURGE_ROLLED_BACK") from None
         checkpoint = self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()

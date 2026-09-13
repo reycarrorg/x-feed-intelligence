@@ -14,7 +14,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from xfi.canonical import canonicalize
+from xfi.canonical import canonicalize, local_post_id
 from xfi.errors import XFIError
 from xfi.recording import find_helper, ingest, preflight
 from xfi.validation import SchemaValidator
@@ -70,6 +70,8 @@ class RecordingTests(unittest.TestCase):
             self.assertEqual(["ambiguous", "organic", "organic", "promoted"], labels)
             self.assertEqual(1.0, 2 / 2, "unambiguous promotion separation")
             self.assertEqual(1, sum(len(post["relationships"]) for post in posts))
+            quote = next(post for post in posts if post["platform_post_id"] == "shared-quote-001")
+            self.assertEqual([("quotes", local_post_id("platform_id", "shared-source-001"))], [(edge["kind"], edge["source_local_post_id"]) for edge in quote["relationships"]])
             self.assertEqual(5, result["ocr"]["candidate_frame_count"])
             self.assertEqual(1, result["ocr"]["worker_count"])
             self.assertEqual([], list(Path(temporary).glob("*.png")), "derived frames persisted")

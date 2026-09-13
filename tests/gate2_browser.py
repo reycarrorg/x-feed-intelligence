@@ -15,8 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from xfi.browser import browser_runtime_preflight, promotion_safe
 from xfi.analysis import analyze_posts
+from xfi.browser import browser_runtime_preflight, promotion_safe
+from xfi.canonical import local_post_id
 from xfi.store import Store
 from xfi.validation import load_and_validate_envelope
 
@@ -86,6 +87,11 @@ class BrowserHarnessTests(unittest.TestCase):
         self.assertFalse(value["belowAccepted"])
         self.assertEqual(5, value["exportRecordCount"])
         self.assertEqual(10, value["utf8ByteCount"])
+        self.assertEqual(5_242_880, value["packetBoundary"]["exactBytes"])
+        self.assertTrue(value["packetBoundary"]["exactPacketReturned"])
+        self.assertFalse(value["packetBoundary"]["overPacketReturned"])
+        self.assertEqual("ERROR", value["packetBoundary"]["overState"]["state"])
+        self.assertEqual("PACKET_LIMIT", value["packetBoundary"]["overState"]["events"][-1]["event_code"])
         self.assertEqual("STOPPED", value["stopped"]["state"])
         self.assertFalse(value["postStopAccepted"])
         self.assertTrue(all(count == 0 for count in value["stopped"]["effects"].values()))
@@ -119,9 +125,13 @@ class BrowserHarnessTests(unittest.TestCase):
                 analyses = analyze_posts(posts)
             self.assertEqual(4, len(posts))
             self.assertEqual(2, len(analyses), "promoted and ambiguous units must not enter organic analysis")
+            quote = next(post for post in posts if post["platform_post_id"] == "shared-quote-001")
+            self.assertEqual([("quotes", local_post_id("platform_id", "shared-source-001"))], [(edge["kind"], edge["source_local_post_id"]) for edge in quote["relationships"]])
             self.assertTrue(evidence["fresh_profile"] and evidence["reserved_host_mapped"] and evidence["hidden_canaries_excluded"])
             self.assertGreater(evidence["network"]["allowed_fixture_tunnels"], 0)
             self.assertGreater(evidence["network"]["denied_requests"], 0)
+            self.assertTrue(evidence["exact_packet_allowed"])
+            self.assertFalse(evidence["oversized_packet_returned"])
 
 
 if __name__ == "__main__": unittest.main(verbosity=2)

@@ -25,6 +25,16 @@
     return count;
   }
 
+  function packetFits(value, maximumBytes) {
+    return utf8Bytes(stableString(value)) <= (maximumBytes === undefined ? LIMITS.maxPacketBytes : maximumBytes);
+  }
+
+  function enforcePacket(runtime, value, maximumBytes) {
+    if (packetFits(value, maximumBytes)) return value;
+    runtime.hardStop("PACKET_LIMIT");
+    return null;
+  }
+
   function iso(value) { return new Date(value).toISOString(); }
 
   function containsInjection(text) {
@@ -32,10 +42,11 @@
   }
 
   class Harness {
-    constructor(clock, timerApi, durationMs) {
+    constructor(clock, timerApi, durationMs, packetLimit) {
       this.clock = clock || (() => Date.now());
       this.timerApi = timerApi || null;
       this.durationMs = Math.max(1, Math.min(LIMITS.maxDurationMs, Number(durationMs) || LIMITS.maxDurationMs));
+      this.packetLimit = Math.max(1, Math.min(LIMITS.maxPacketBytes, Number(packetLimit) || LIMITS.maxPacketBytes));
       this.timerToken = null;
       this.state = "INACTIVE";
       this.queue = [];
@@ -97,7 +108,7 @@
       if (previous && previous.identity === item.identity && previous.signature === signature) return false;
       if (this.queue.length >= LIMITS.maxCandidates) return this.hardStop("QUEUE_LIMIT");
       const record = {identity: item.identity, visible_text: item.visibleText, author_label: item.authorLabel || "Unknown", promotion: item.promotion, relationships: item.relationships || [], visibility_ratio: item.visibilityRatio, observed_at: iso(this.clock())};
-      if (utf8Bytes(stableString({records: this.queue.concat([record])})) > LIMITS.maxPacketBytes) return this.hardStop("PACKET_LIMIT");
+      if (utf8Bytes(stableString({records: this.queue.concat([record])})) > this.packetLimit) return this.hardStop("PACKET_LIMIT");
       this.identities[item.nodeKey] = {identity: item.identity, signature};
       this.domReferenceCount = Object.keys(this.identities).length;
       this.queue.push(record);
@@ -152,12 +163,17 @@
     }
   }
 
-  global.XFIHarness = Object.freeze({Harness, LIMITS, HARD_STOPS, RESERVED_ORIGIN, stableString, utf8Bytes});
+  global.XFIHarness = Object.freeze({Harness, LIMITS, HARD_STOPS, RESERVED_ORIGIN, stableString, utf8Bytes, packetFits, enforcePacket});
 
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
     const configuredDuration = Number(document.querySelector("[data-fixture-max-duration-ms]")?.getAttribute("data-fixture-max-duration-ms"));
-    const runtime = new Harness(() => Date.now(), {set: (callback, delay) => global.setTimeout(callback, delay), clear: (token) => global.clearTimeout(token)}, configuredDuration);
+    const configuredPacketLimit = Number(document.querySelector("[data-fixture-max-packet-bytes]")?.getAttribute("data-fixture-max-packet-bytes"));
+    const runtime = new Harness(() => Date.now(), {set: (callback, delay) => global.setTimeout(callback, delay), clear: (token) => global.clearTimeout(token)}, configuredDuration, configuredPacketLimit);
     global.__XFI_TEST_SNAPSHOT__ = () => runtime.snapshot();
+    document.addEventListener("XFI_TEST_SET_PACKET_LIMIT", () => {
+      const value = Number(document.documentElement.getAttribute("data-xfi-test-packet-limit"));
+      runtime.packetLimit = Math.max(1, Math.min(LIMITS.maxPacketBytes, value || LIMITS.maxPacketBytes));
+    });
     let intersections = null;
     let mutations = null;
     let nextNodeKey = 0;
@@ -291,8 +307,13 @@
       const bytes = new TextEncoder().encode(stableString(digestSource));
       const hash = await crypto.subtle.digest("SHA-256", bytes);
       envelope.content_digest = "sha256:" + Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
-      if (utf8Bytes(stableString(envelope)) > LIMITS.maxPacketBytes) runtime.hardStop("PACKET_LIMIT");
-      return envelope;
+      const checked = enforcePacket(runtime, envelope, runtime.packetLimit);
+      if (!checked) {
+        const error = new Error("PACKET_LIMIT");
+        error.code = "PACKET_LIMIT";
+        throw error;
+      }
+      return checked;
     }
 
     document.addEventListener("visibilitychange", () => {
@@ -306,7 +327,7 @@
       if (message.action === "USER_EXPORT") {
         const capture = runtime.userExport();
         if (!capture) { respond({result: null, snapshot: runtime.snapshot()}); return false; }
-        buildEnvelope(capture).then((result) => respond({result, snapshot: runtime.snapshot()}), () => { runtime.hardStop("SCHEMA_MISMATCH"); respond({result: null, snapshot: runtime.snapshot()}); });
+        buildEnvelope(capture).then((result) => respond({result, snapshot: runtime.snapshot()}), (error) => { if (runtime.state !== "ERROR") runtime.hardStop(error && error.code === "PACKET_LIMIT" ? "PACKET_LIMIT" : "SCHEMA_MISMATCH"); respond({result: null, snapshot: runtime.snapshot()}); });
         return true;
       }
       let result = false;

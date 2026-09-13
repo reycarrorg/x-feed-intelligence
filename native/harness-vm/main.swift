@@ -37,10 +37,24 @@ let tests = #"""
     const after = instance.snapshot();
     stopResults[code] = {state:before.state, observerCount:before.observerCount, timerCount:before.timerCount, domReferenceCount:before.domReferenceCount, postStopAccepted:later, queueStable:before.queueCount === after.queueCount};
   });
+  function packetAt(bytes) {
+    const value = {schema_version:"1.0.0", observations:[], padding:""};
+    const overhead = H.utf8Bytes(H.stableString(value));
+    value.padding = "a".repeat(bytes - overhead);
+    return value;
+  }
+  const exactRuntime = new H.Harness(clock);
+  exactRuntime.userArm(H.RESERVED_ORIGIN); exactRuntime.userStart();
+  const exactPacket = packetAt(H.LIMITS.maxPacketBytes);
+  const exactPacketReturned = H.enforcePacket(exactRuntime, exactPacket) !== null;
+  const overRuntime = new H.Harness(clock);
+  overRuntime.userArm(H.RESERVED_ORIGIN); overRuntime.userStart();
+  const overPacketReturned = H.enforcePacket(overRuntime, packetAt(H.LIMITS.maxPacketBytes + 1)) !== null;
   return JSON.stringify({
     lifecycle, edgeAccepted, sameIdentityMutation, reusedNodeAccepted, quoteAccepted, ambiguousAccepted, hiddenAccepted, belowAccepted,
     exportRecordCount: exportValue.records.length, exportRecords: exportValue.records, stopped, postStopAccepted, stopResults,
     utf8ByteCount: H.utf8Bytes("café 🚀"),
+    packetBoundary: {exactBytes:H.utf8Bytes(H.stableString(exactPacket)), exactPacketReturned, overPacketReturned, overState:overRuntime.snapshot()},
     capabilities: {fetch:typeof fetch, xhr:typeof XMLHttpRequest, websocket:typeof WebSocket, document:typeof document},
   });
 })()

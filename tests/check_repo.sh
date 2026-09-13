@@ -27,10 +27,10 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   fixtures/gate2/shared-corpus.json DEPENDENCIES.lock.json sbom/cyclonedx.cdx.json \
   docs/gate2/README.md docs/gate2/PACKAGE_BOUNDARY.md \
   docs/gate2/SECURITY_PRIVACY_REVIEW.md docs/gate2/GATE3_RESIDUAL_RISK.md \
-  src/xfi/validation.py src/xfi/store.py src/xfi/analysis.py src/xfi/render.py \
+  src/xfi/validation.py src/xfi/canonical.py src/xfi/store.py src/xfi/analysis.py src/xfi/render.py src/xfi/cli.py \
   src/xfi/recording.py src/xfi/browser.py \
   harness/synthetic/manifest.json harness/synthetic/synthetic-harness.js \
-  harness/synthetic/synthetic-background.js harness/synthetic/synthetic-control.js harness/synthetic/control.html \
+  harness/synthetic/synthetic-background.js harness/synthetic/synthetic-control.js harness/synthetic/control.html harness/synthetic/fixture.html \
   tests/browser/run-mv3-integration.mjs \
   native/recording-helper/main.swift native/harness-vm/main.swift \
   scripts/package_review.py scripts/measure_gate2.py \

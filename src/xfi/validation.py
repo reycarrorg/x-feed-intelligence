@@ -3,18 +3,52 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import stat
 from datetime import date, datetime
 from pathlib import Path
 
-from .canonical import canonical_bytes, digest
+from .canonical import canonical_bytes, digest, relationship_target_ids
 from .errors import ValidationError
 
 MAX_PACKET_BYTES = 5_242_880
 MAX_DEPTH = 64
 SENSITIVE_KEYS = re.compile(r"(?i)(authorization|auth[_-]?token|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|bearer|cookie|csrf|password|session[_-]?(?:token|storage)|local[_-]?storage|browser[_-]?profile|direct[_-]?messages?|notifications?|payment|har)")
 SECRET_VALUES = re.compile(r"(?i)(?:bearer\s+[a-z0-9._-]{12,}|-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----)")
+
+
+def _strict_object(pairs: list[tuple[str, object]]) -> dict:
+    value = {}
+    for key, child in pairs:
+        if key in value:
+            raise ValidationError("REJECTED_DUPLICATE_KEY")
+        value[key] = child
+    return value
+
+
+def _reject_constant(_value: str) -> object:
+    raise ValidationError("REJECTED_NONFINITE_NUMBER")
+
+
+def _has_invalid_unicode(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(_has_invalid_unicode(key) or _has_invalid_unicode(child) for key, child in value.items())
+    if isinstance(value, list):
+        return any(_has_invalid_unicode(child) for child in value)
+    if isinstance(value, str):
+        return any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+    return False
+
+
+def strict_json_loads(raw: bytes) -> object:
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object, parse_constant=_reject_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValidationError("REJECTED_SCHEMA") from None
+    if _has_invalid_unicode(value):
+        raise ValidationError("REJECTED_UNICODE")
+    return value
 
 
 def read_bounded_file(path: Path, maximum: int = MAX_PACKET_BYTES) -> bytes:
@@ -141,7 +175,7 @@ class SchemaValidator:
             except ValueError:
                 raise ValidationError() from None
         elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            if value < schema.get("minimum", value) or value > schema.get("maximum", value):
+            if not math.isfinite(value) or value < schema.get("minimum", value) or value > schema.get("maximum", value):
                 raise ValidationError()
 
     def validate_file(self, value: object, name: str) -> None:
@@ -152,10 +186,7 @@ class SchemaValidator:
 def load_and_validate_envelope(raw: bytes, schema_root: Path) -> dict:
     if len(raw) > MAX_PACKET_BYTES:
         raise ValidationError("REJECTED_PACKET_LIMIT")
-    try:
-        value = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise ValidationError("REJECTED_SCHEMA") from None
+    value = strict_json_loads(raw)
     if nested_depth(value) > MAX_DEPTH:
         raise ValidationError("REJECTED_DEPTH")
     privacy = sensitive_category(value)
@@ -166,6 +197,7 @@ def load_and_validate_envelope(raw: bytes, schema_root: Path) -> dict:
     if value["schema_version"] != "1.0.0":
         raise ValidationError("REJECTED_VERSION")
     SchemaValidator(schema_root).validate_file(value, "envelope.schema.json")
+    relationship_target_ids(value["observations"])
     if value["content_digest"] != digest(value):
         raise ValidationError("REJECTED_DIGEST")
     session = value["session"]
@@ -181,7 +213,11 @@ def load_and_validate_envelope(raw: bytes, schema_root: Path) -> dict:
             if item["provenance_id"] in provenance:
                 raise ValidationError("REJECTED_DUPLICATE_ID")
             provenance.add(item["provenance_id"])
+    for observation in value["observations"]:
         for relationship in observation["relationships"]:
-            if not set(relationship.get("provenance_ids", [])) <= provenance | {p["provenance_id"] for p in observation["provenance"]}:
+            if not set(relationship.get("provenance_ids", [])) <= provenance:
+                raise ValidationError("REJECTED_REFERENCE")
+        for media in observation["media"]:
+            if not set(media.get("provenance_ids", [])) <= provenance:
                 raise ValidationError("REJECTED_REFERENCE")
     return value

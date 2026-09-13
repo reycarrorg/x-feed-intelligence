@@ -20,6 +20,7 @@ class CLITests(unittest.TestCase):
         environment = dict(os.environ)
         environment["PYTHONPATH"] = str(ROOT / "src")
         completed = subprocess.run([sys.executable, "-m", "xfi", *map(str, arguments)], cwd=ROOT, env=environment, capture_output=True, text=True)
+        self.last_completed = completed
         self.assertEqual(expected, completed.returncode, completed.stderr or completed.stdout)
         return json.loads(completed.stdout if expected == 0 else completed.stderr)
 
@@ -63,6 +64,25 @@ class CLITests(unittest.TestCase):
             rendered = json.dumps(result)
             self.assertEqual("REJECTED_PACKET_LIMIT", result["code"])
             self.assertNotIn("DO-NOT-ECHO-CANARY", rendered)
+
+    def test_strict_json_errors_are_category_only_without_traceback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cases = [
+                (b'{"schema_version":"1.0.0","schema_version":"1.0.0"}', "REJECTED_DUPLICATE_KEY"),
+                (b'{"schema_version":NaN}', "REJECTED_NONFINITE_NUMBER"),
+                (b'{"schema_version":Infinity}', "REJECTED_NONFINITE_NUMBER"),
+                (b'{"schema_version":"\\ud800"}', "REJECTED_UNICODE"),
+                (b'\xff', "REJECTED_SCHEMA"),
+            ]
+            for index, (raw, code) in enumerate(cases):
+                packet = root / f"invalid-{index}.json"
+                packet.write_bytes(raw)
+                with self.subTest(code=code):
+                    result = self.command("validate", packet, expected=2)
+                    self.assertEqual(code, result["code"])
+                    self.assertNotIn("Traceback", self.last_completed.stderr)
+                    self.assertEqual({"code", "status"}, set(result))
 
 
 if __name__ == "__main__": unittest.main(verbosity=2)
