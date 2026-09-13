@@ -1,6 +1,6 @@
 # Gate 3 Residual Risk and Exact Forbidden Supervised Test
 
-Gate 2 does not accept Gate 3 risk. Passive extraction from a visible X page may still violate X's Terms and may expose the account to enforcement even when the implementation is non-automating. Live markup, challenge detection, permission behavior, virtualized cards, account state, accessibility, and resource use remain unverified. The current schema truthfully permits only authored synthetic DOM input and recording input; live DOM provenance requires a separately reviewed schema/source version.
+Gate 2 does not accept Gate 3 risk. Passive extraction from a visible X page may still violate X's Terms and may expose the account to enforcement even when the implementation is non-automating. Authored-fixture MV3 permission behavior, keyboard controls, hidden descendants, mutations, virtualized nodes, resource stops, teardown, and reserved-host network denial are now verified on the exact macOS test browser. Live markup, live challenge detection, account state, browser-store behavior, and live-origin resource use remain unverified. The current schema truthfully permits only authored synthetic DOM input and recording input; live DOM provenance requires a separately reviewed schema/source version.
 
 The earliest future supervised comparison is exactly bounded as follows and remains forbidden until the user gives separate authorization after a current policy recheck:
 

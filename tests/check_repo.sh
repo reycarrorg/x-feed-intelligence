@@ -18,6 +18,7 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   docs/gate1/POLICY_RECHECK.md \
   contracts/v1/manifest.proposal.json contracts/v1/manifest.synthetic-test-only.json \
   contracts/v1/browser-test-boundary.json contracts/v1/extension-lifecycle.json \
+  package.json pnpm-lock.yaml .npmrc \
   schemas/v1/common.schema.json schemas/v1/session.schema.json \
   schemas/v1/observation.schema.json schemas/v1/canonical-post.schema.json \
   schemas/v1/analysis.schema.json schemas/v1/envelope.schema.json \
@@ -29,10 +30,12 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   src/xfi/validation.py src/xfi/store.py src/xfi/analysis.py src/xfi/render.py \
   src/xfi/recording.py src/xfi/browser.py \
   harness/synthetic/manifest.json harness/synthetic/synthetic-harness.js \
+  harness/synthetic/synthetic-background.js harness/synthetic/synthetic-control.js harness/synthetic/control.html \
+  tests/browser/run-mv3-integration.mjs \
   native/recording-helper/main.swift native/harness-vm/main.swift \
   scripts/package_review.py scripts/measure_gate2.py \
   tests/gate1_acceptance.py tests/gate2_core.py tests/gate2_recording.py \
-  tests/gate2_browser.py tests/gate2_integration.py tests/gate2_security.py; do
+  tests/gate2_browser.py tests/gate2_integration.py tests/gate2_security.py tests/gate2_cli.py; do
   test -s "$repo_root/$path" || { echo "missing or empty: $path" >&2; exit 1; }
 done
 
@@ -40,7 +43,7 @@ if find "$repo_root" -type f \
   \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.m4v' -o -iname '*.webm' \
      -o -iname '*.sqlite' -o -iname '*.sqlite3' -o -iname '*.db' \
      -o -iname '*.pem' -o -iname '*.key' -o -name '.env' \) \
-  -not -path "$repo_root/.git/*" | grep -q .; then
+  -not -path "$repo_root/.git/*" -not -path "$repo_root/build/*" -not -path "$repo_root/node_modules/*" | grep -q .; then
   echo "private capture, database, or credential-like file found" >&2
   exit 1
 fi
@@ -53,6 +56,7 @@ PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_core.py"
 PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_browser.py"
 PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_recording.py"
 PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_integration.py"
+PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_cli.py"
 python3 "$repo_root/tests/gate2_security.py"
 python3 "$repo_root/scripts/package_review.py" --check
 echo 'repository policy and Gate 2 checks passed'

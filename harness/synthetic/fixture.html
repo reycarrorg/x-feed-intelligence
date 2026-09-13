@@ -2,19 +2,31 @@
 <html lang="en">
 <meta charset="utf-8">
 <title>Authored synthetic feed fixture</title>
+<style>
+  article { min-height: 150px; margin: 12px 0; border: 1px solid currentColor; }
+  .fixture-display-none { display: none; }
+  .fixture-visibility-hidden { visibility: hidden; }
+  .fixture-opacity-zero { opacity: 0; }
+  .fixture-off-layout { position: absolute; left: -10000px; top: -10000px; }
+</style>
 <body>
-<main data-fixture-feed aria-label="Authored synthetic feed">
-  <article data-fixture-card="fixture-one">
+<main data-fixture-feed data-fixture-max-duration-ms="30000" aria-label="Authored synthetic feed">
+  <article data-fixture-card="shared-source-001">
     <h2 data-fixture-author>Synthetic Recorder</h2>
-    <p data-fixture-text>Deterministic local workshop on day 7</p>
+    <p data-fixture-text>Deterministic local workshop on day 7 <span class="fixture-display-none">HIDDEN-DISPLAY-CANARY</span><span class="fixture-visibility-hidden">HIDDEN-VISIBILITY-CANARY</span><span class="fixture-opacity-zero">HIDDEN-OPACITY-CANARY</span><span class="fixture-off-layout">HIDDEN-OFF-LAYOUT-CANARY</span></p>
     <span data-fixture-promotion>Organic</span>
   </article>
-  <article data-fixture-card="fixture-two">
+  <article data-fixture-card="shared-quote-001" data-fixture-relationship-kind="quotes" data-fixture-source-id="shared-source-001">
+    <h2 data-fixture-author>Quoting Analyst</h2>
+    <p data-fixture-text>Useful context quoting the workshop</p>
+    <span data-fixture-promotion>Organic</span>
+  </article>
+  <article data-fixture-card="shared-promoted-001">
     <h2 data-fixture-author>Example Studio</h2>
     <p data-fixture-text>Invented notebook offer</p>
     <span data-fixture-promotion>Promoted</span>
   </article>
-  <article data-fixture-card="fixture-three" data-fixture-ambiguous="0.05">
+  <article data-fixture-card="shared-ambiguous-001" data-fixture-ambiguous="0.05">
     <h2 data-fixture-author>Unknown</h2>
     <p data-fixture-text>Partial evidence</p>
     <span data-fixture-promotion>Review required</span>

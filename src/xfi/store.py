@@ -93,6 +93,51 @@ class ImportResult:
     idempotent: bool
 
 
+def _canonical_identity(post: dict) -> bytes:
+    value = json.loads(canonical_bytes(post))
+    value.pop("observation_ids", None)
+    value.pop("deduplication", None)
+    for relationship in value.get("relationships", []):
+        relationship.pop("provenance_ids", None)
+    for media in value.get("media", []):
+        media.pop("provenance_ids", None)
+    return canonical_bytes(value)
+
+
+def _merge_canonical_evidence(existing: dict, incoming: dict) -> dict:
+    merged = dict(existing)
+    observation_ids = sorted(set(existing["observation_ids"]) | set(incoming["observation_ids"]))
+    merged["observation_ids"] = observation_ids
+    merged["deduplication"] = dict(existing["deduplication"])
+    if len(observation_ids) == 1:
+        merged["deduplication"]["method"] = incoming["deduplication"]["method"]
+    elif merged["platform_post_id"]:
+        merged["deduplication"]["method"] = "platform_id"
+    elif merged["canonical_permalink"]:
+        merged["deduplication"]["method"] = "canonical_permalink"
+    else:
+        merged["deduplication"]["method"] = "exact_content_tuple"
+    merged["deduplication"]["confidence"] = max(existing["deduplication"]["confidence"], incoming["deduplication"]["confidence"])
+    merged["deduplication"]["evidence_observation_ids"] = observation_ids
+    incoming_relationships = {(item["kind"], item["source_local_post_id"]): item for item in incoming.get("relationships", [])}
+    relationships = []
+    for item in existing.get("relationships", []):
+        value = dict(item)
+        counterpart = incoming_relationships.get((item["kind"], item["source_local_post_id"]), {})
+        value["provenance_ids"] = sorted(set(item.get("provenance_ids", [])) | set(counterpart.get("provenance_ids", [])))
+        relationships.append(value)
+    merged["relationships"] = relationships
+    incoming_media = {item["local_media_id"]: item for item in incoming.get("media", [])}
+    media_items = []
+    for item in existing.get("media", []):
+        value = dict(item)
+        counterpart = incoming_media.get(item["local_media_id"], {})
+        value["provenance_ids"] = sorted(set(item.get("provenance_ids", [])) | set(counterpart.get("provenance_ids", [])))
+        media_items.append(value)
+    merged["media"] = media_items
+    return merged
+
+
 class Store:
     def __init__(self, path: Path, *, allow_nonlocal_for_test: bool = False):
         self.path = path.resolve()
@@ -173,9 +218,20 @@ class Store:
             if inject_failure:
                 raise sqlite3.OperationalError("synthetic injected failure")
             for post in posts:
-                self.connection.execute("INSERT INTO canonical_posts VALUES (?,?)", (post["local_post_id"], canonical_bytes(post)))
+                existing_post = self.connection.execute("SELECT record_json FROM canonical_posts WHERE local_post_id=?", (post["local_post_id"],)).fetchone()
+                if existing_post is None:
+                    self.connection.execute("INSERT INTO canonical_posts VALUES (?,?)", (post["local_post_id"], canonical_bytes(post)))
+                else:
+                    existing_value = json.loads(existing_post[0])
+                    if _canonical_identity(existing_value) != _canonical_identity(post):
+                        raise StoreError("CANONICAL_CONFLICT")
+                    merged = _merge_canonical_evidence(existing_value, post)
+                    self.connection.execute("UPDATE canonical_posts SET record_json=? WHERE local_post_id=?", (canonical_bytes(merged), post["local_post_id"]))
                 self.connection.executemany("INSERT INTO post_observations VALUES (?,?)", [(post["local_post_id"], oid) for oid in post["observation_ids"]])
             self.connection.commit()
+        except StoreError:
+            self.connection.rollback()
+            raise
         except sqlite3.Error:
             self.connection.rollback()
             raise StoreError("IMPORT_ROLLED_BACK") from None
@@ -274,10 +330,16 @@ class Store:
 
     @staticmethod
     def restore(backup: Path, destination: Path) -> dict:
+        try:
+            backup_metadata = backup.lstat()
+        except OSError:
+            raise StoreError("RESTORE_PATH_REJECTED") from None
+        if backup.is_symlink() or not backup.is_file() or backup_metadata.st_size > 5_242_880_000:
+            raise StoreError("RESTORE_PATH_REJECTED")
         backup, destination = backup.resolve(), destination.resolve()
         if destination.exists():
             raise StoreError("RESTORE_DESTINATION_EXISTS")
-        if not _is_local_path(destination) or not backup.is_file() or backup.stat().st_size > 5_242_880_000:
+        if not _is_local_path(destination):
             raise StoreError("RESTORE_PATH_REJECTED")
         source = sqlite3.connect(f"file:{backup}?mode=ro", uri=True)
         try:

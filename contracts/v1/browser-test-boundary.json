@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "production_proposal": {
     "manifest": "contracts/v1/manifest.proposal.json",
     "review_mode": "static_inspection_only",
@@ -19,7 +19,7 @@
   },
   "production_promotion_guard": {
     "required_test_only_markers": ["TEST ONLY", "NON-DISTRIBUTABLE"],
-    "forbidden_bundle_paths": ["manifest.synthetic-test-only.json", "synthetic-harness.js", "fixtures/synthetic/"],
+    "forbidden_bundle_paths": ["manifest.synthetic-test-only.json", "harness/synthetic/", "synthetic-harness.js", "synthetic-background.js", "synthetic-control.js", "fixtures/synthetic/", "tests/browser/", "package.json", "pnpm-lock.yaml", "node_modules/", "browser-runtime"],
     "forbidden_production_values": ["https://fixture.example.invalid", "TEST ONLY", "NON-DISTRIBUTABLE"],
     "failure_action": "reject_package_candidate"
   }

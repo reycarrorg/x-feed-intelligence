@@ -20,7 +20,7 @@ from xfi.canonical import canonical_bytes, canonicalize, digest, pretty_bytes, p
 from xfi.errors import StoreError, ValidationError
 from xfi.render import html_escape, markdown_escape, neutralize_formula, private_markdown, sanitize
 from xfi.store import APPLICATION_ID, MIGRATION_CHECKSUM, Store
-from xfi.validation import load_and_validate_envelope, sensitive_category
+from xfi.validation import load_and_validate_envelope, read_bounded_file, sensitive_category
 
 FIXTURES = ROOT / "fixtures" / "synthetic" / "v1"
 SCHEMAS = ROOT / "schemas" / "v1"
@@ -28,6 +28,24 @@ SCHEMAS = ROOT / "schemas" / "v1"
 
 def load(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def rekey_session(envelope: dict, session_id: str) -> dict:
+    value = copy.deepcopy(envelope)
+    value["session"]["session_id"] = session_id
+    provenance_map = {}
+    for index, observation in enumerate(value["observations"]):
+        observation["session_id"] = session_id
+        observation["observation_id"] = f"{session_id}-observation-{index:03d}"
+        for pindex, provenance in enumerate(observation["provenance"]):
+            old = provenance["provenance_id"]
+            new = f"{session_id}-provenance-{index:03d}-{pindex:02d}"
+            provenance["provenance_id"] = new
+            provenance_map[old] = new
+        for relationship in observation["relationships"]:
+            relationship["provenance_ids"] = [provenance_map.get(item, item) for item in relationship.get("provenance_ids", [])]
+    value["content_digest"] = digest(value)
+    return value
 
 
 class ValidatorTests(unittest.TestCase):
@@ -50,6 +68,21 @@ class ValidatorTests(unittest.TestCase):
             with self.subTest(code=code), self.assertRaises(ValidationError) as caught:
                 load_and_validate_envelope(raw, SCHEMAS)
             self.assertEqual(code, caught.exception.code)
+
+    def test_bounded_file_read_rejects_before_decode_without_echo(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            oversized = root / "SECRET-CANARY.json"
+            with oversized.open("wb") as stream: stream.truncate(5_242_881)
+            with self.assertRaises(ValidationError) as size: read_bounded_file(oversized)
+            self.assertEqual("REJECTED_PACKET_LIMIT", size.exception.code)
+            self.assertNotIn("SECRET-CANARY", str(size.exception))
+            target = root / "target.json"
+            target.write_text("{}")
+            link = root / "link.json"
+            link.symlink_to(target)
+            with self.assertRaises(ValidationError) as linked: read_bounded_file(link)
+            self.assertEqual("REJECTED_INPUT_FILE", linked.exception.code)
 
     def test_private_and_secret_values_reject_without_echo(self):
         for case in load("privacy-rejection.json")["cases"]:
@@ -108,11 +141,46 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(StoreError) as caught: store.import_envelope(other)
             self.assertEqual("IDEMPOTENCE_DIGEST_CONFLICT", caught.exception.code)
 
+    def test_cross_session_canonical_reuse_conflict_and_shared_purge(self):
+        second = rekey_session(self.envelope, "synthetic-dom-002")
+        with Store(self.db) as store:
+            store.import_envelope(self.envelope)
+            store.import_envelope(second)
+            self.assertEqual(5, store.connection.execute("SELECT COUNT(*) FROM canonical_posts").fetchone()[0])
+            self.assertEqual(12, store.connection.execute("SELECT COUNT(*) FROM post_observations").fetchone()[0])
+            reused = next(post for post in store.list_posts("synthetic-dom-002") if post["platform_post_id"] == "synthetic-post-100")
+            self.assertEqual(4, len(reused["observation_ids"]))
+            self.assertEqual("platform_id", reused["deduplication"]["method"])
+            first_purge = store.purge_session("synthetic-dom-001", vacuum=False)
+            self.assertEqual("PURGE_COMPLETED", first_purge["status"])
+            self.assertEqual(5, store.connection.execute("SELECT COUNT(*) FROM canonical_posts").fetchone()[0])
+            self.assertEqual(6, store.connection.execute("SELECT COUNT(*) FROM post_observations").fetchone()[0])
+            store.purge_session("synthetic-dom-002", vacuum=False)
+            self.assertEqual(0, store.connection.execute("SELECT COUNT(*) FROM canonical_posts").fetchone()[0])
+
+        conflict_db = self.root / "conflict.sqlite"
+        conflict = rekey_session(self.envelope, "synthetic-dom-conflict")
+        conflict["observations"] = [conflict["observations"][0]]
+        conflict["observations"][0]["visible_text"] = "Contradictory synthetic value 999"
+        conflict["content_digest"] = digest(conflict)
+        with Store(conflict_db) as store:
+            store.import_envelope(self.envelope)
+            with self.assertRaises(StoreError) as caught: store.import_envelope(conflict)
+            self.assertEqual("CANONICAL_CONFLICT", caught.exception.code)
+            self.assertEqual(1, store.connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0])
+
     def test_arbitrary_database_rejected(self):
         arbitrary = self.root / "arbitrary.sqlite"
         sqlite3.connect(arbitrary).close()
         with self.assertRaises(StoreError) as caught: Store(arbitrary)
         self.assertEqual("ARBITRARY_DATABASE_REJECTED", caught.exception.code)
+
+    def test_nonlocal_database_and_backup_are_rejected_before_write(self):
+        with self.assertRaises(StoreError) as database: Store(Path("/Volumes/xfi-nonlocal-test/private.sqlite"))
+        self.assertEqual("NONLOCAL_DATABASE_REJECTED", database.exception.code)
+        with Store(self.db) as store:
+            with self.assertRaises(StoreError) as backup: store.backup(Path("/Volumes/xfi-nonlocal-test/backup.sqlite"), "2030-01-02")
+        self.assertEqual("NONLOCAL_BACKUP_REJECTED", backup.exception.code)
 
     def test_backup_restore_isolation_integrity_and_no_overwrite(self):
         backup, restored = self.root / "backup.sqlite", self.root / "restored.sqlite"
@@ -128,6 +196,10 @@ class StoreTests(unittest.TestCase):
             restored_store.connection.commit()
         with Store(self.db) as original:
             self.assertEqual("1", original.connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0])
+        link = self.root / "backup-link.sqlite"
+        link.symlink_to(backup)
+        with self.assertRaises(StoreError) as linked: Store.restore(link, self.root / "linked-restore.sqlite")
+        self.assertEqual("RESTORE_PATH_REJECTED", linked.exception.code)
 
     def test_purge_rollback_vacuum_cleanup_and_orphans(self):
         derived = self.root / "derived-frame.tmp"

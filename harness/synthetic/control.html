@@ -13,11 +13,13 @@
 <h1>TEST ONLY — NON-DISTRIBUTABLE</h1>
 <p id="state" role="status" aria-live="polite">State: INACTIVE</p>
 <nav aria-label="Synthetic collector lifecycle controls">
-  <button type="button" aria-label="Arm synthetic collector">Arm</button>
-  <button type="button" aria-label="Start synthetic capture">Start</button>
-  <button type="button" aria-label="Export synthetic packet">Export</button>
-  <button type="button" aria-label="Stop synthetic capture">Stop</button>
-  <button type="button" aria-label="Discard synthetic draft">Discard</button>
+  <button type="button" data-action="USER_ARM" aria-label="Arm synthetic collector">Arm</button>
+  <button type="button" data-action="USER_START" aria-label="Start synthetic capture">Start</button>
+  <button type="button" data-action="USER_EXPORT" aria-label="Export synthetic packet">Export</button>
+  <button type="button" data-action="USER_STOP" aria-label="Stop synthetic capture">Stop</button>
+  <button type="button" data-action="USER_DISCARD" aria-label="Discard synthetic draft">Discard</button>
 </nav>
 <p>State is always conveyed in text; color is never the only signal.</p>
+<pre id="export" aria-label="Synthetic export JSON" hidden></pre>
+<script src="synthetic-control.js"></script>
 </html>

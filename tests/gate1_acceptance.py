@@ -917,10 +917,10 @@ def check_lifecycle_manifest_and_limits() -> str:
 
 def check_repository_safety_and_notices() -> str:
     real_status = re.compile(r"https://(?:www\.)?x\.com/[A-Za-z0-9_]+/status/[0-9]+")
-    local_path = re.compile(r"(?:/Users/|[A-Za-z]:\\\\Users\\\\)\S+")
+    local_path = re.compile(r"(?:/" + "Users/|[A-Za-z]:\\\\" + r"Users\\\\)\S+")
     forbidden_suffixes = {".mp4", ".mov", ".m4v", ".webm", ".sqlite", ".sqlite3", ".db", ".pem", ".key", ".p12", ".har"}
     for path in ROOT.rglob("*"):
-        if not path.is_file() or ".git" in path.parts:
+        if not path.is_file() or {".git", "node_modules", "build", "dist"} & set(path.parts):
             continue
         require(path.suffix.lower() not in forbidden_suffixes and path.name != ".env", f"forbidden private/credential artifact: {path.relative_to(ROOT)}")
         if path.suffix.lower() in {".md", ".json", ".py", ".sh"}:
@@ -931,9 +931,13 @@ def check_repository_safety_and_notices() -> str:
 
     notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
     require("No third-party package" in notices, "empty adopted-dependency declaration missing")
-    package_files = [path for pattern in ("package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "requirements*.txt", "poetry.lock", "Pipfile.lock", "Cargo.lock", "Package.resolved") for path in ROOT.rglob(pattern) if ".git" not in path.parts]
-    require(not package_files, "dependency/lockfile exists despite empty notice set")
-    return "no private artifact, real-status URL, local path, or undeclared dependency found"
+    package_files = [ROOT / name for name in ("package.json", "pnpm-lock.yaml") if (ROOT / name).is_file()]
+    require({path.name for path in package_files} == {"package.json", "pnpm-lock.yaml"}, "test-only browser dependency lock is incomplete")
+    lock = load_json(ROOT / "DEPENDENCIES.lock.json")
+    require([item["name"] for item in lock.get("test_dependencies", [])] == ["playwright-core", "Chrome for Testing"], "test-only dependency inventory drifted")
+    require(lock["product_dependencies"] == [], "test-only dependency entered product scope")
+    require("playwright-core" in notices and "Chrome for Testing" in notices, "test-only dependency notice missing")
+    return "no private artifact, real-status URL, local path, or undeclared product dependency found; test-only browser stack is pinned and excluded"
 
 
 def run() -> int:

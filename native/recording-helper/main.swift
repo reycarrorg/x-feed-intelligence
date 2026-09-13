@@ -127,6 +127,7 @@ func generateSynthetic(_ path: String) async throws {
     let cards = [
         ["Synthetic Recorder", "Deterministic local workshop on day 7", "Organic"],
         ["Synthetic Recorder", "Deterministic local workshop on day 7", "Organic"],
+        ["Quoting Analyst", "Useful context quoting the workshop", "Quotes shared-source-001", "Organic"],
         ["Example Studio", "Invented notebook offer", "Promoted"],
         ["Unknown", "Partial evidence", "Review required"],
     ]
@@ -150,7 +151,7 @@ struct Main {
             switch args[1] {
             case "metadata": try await metadata(args[2])
             case "ocr":
-                guard args.count == 8, let x = Int(args[3]), let y = Int(args[4]), let w = Int(args[5]), let h = Int(args[6]), let interval = Int(args[7]), w > 0, h > 0 else { throw HelperError.invalidArguments }
+                guard args.count == 8, let x = Int(args[3]), let y = Int(args[4]), let w = Int(args[5]), let h = Int(args[6]), let interval = Int(args[7]), w > 0, h > 0, interval > 0 else { throw HelperError.invalidArguments }
                 try await ocr(args[2], crop: [x, y, w, h], intervalMilliseconds: interval)
             case "generate-synthetic": try await generateSynthetic(args[2])
             default: throw HelperError.invalidArguments

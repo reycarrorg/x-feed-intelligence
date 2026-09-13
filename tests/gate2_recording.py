@@ -26,6 +26,21 @@ class RecordingTests(unittest.TestCase):
             with self.assertRaises(XFIError) as caught: find_helper()
         self.assertEqual("PLATFORM_UNAVAILABLE_APPLE_VISION", caught.exception.code)
 
+    def test_preflight_rejects_size_and_interval_before_native_decode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            small = Path(temporary) / "small.mov"
+            small.write_bytes(b"x")
+            with mock.patch("xfi.recording._run") as native:
+                with self.assertRaises(XFIError) as interval: preflight(small, (0, 0, 1, 1), interval_ms=0)
+                self.assertEqual("RECORDING_INTERVAL_REJECTED", interval.exception.code)
+                native.assert_not_called()
+            large = Path(temporary) / "large.mov"
+            with large.open("wb") as stream: stream.truncate(2_147_483_649)
+            with mock.patch("xfi.recording._run") as native:
+                with self.assertRaises(XFIError) as size: preflight(large, (0, 0, 1, 1))
+                self.assertEqual("RECORDING_FILE_LIMIT", size.exception.code)
+                native.assert_not_called()
+
     @unittest.skipUnless(sys.platform == "darwin", "Apple Vision is a macOS platform facility")
     def test_authored_synthetic_movie_preflight_ocr_tracking_and_metrics(self):
         helper = ROOT / "build" / "native" / "xfi-recording-helper"
@@ -48,15 +63,14 @@ class RecordingTests(unittest.TestCase):
             schema = ROOT / "schemas" / "v1" / "envelope.schema.json"
             SchemaValidator(schema.parent).validate(envelope, json.loads(schema.read_text()), schema)
             posts = canonicalize(envelope["observations"])
-            self.assertEqual(3, len(posts))
-            # 3/3 exact unique matches => precision 1.0 and recall 1.0.
-            self.assertEqual(1.0, 3 / len(posts))
-            self.assertEqual(1.0, len(posts) / 3)
+            self.assertEqual(4, len(posts))
+            self.assertEqual(1.0, 4 / len(posts))
+            self.assertEqual(1.0, len(posts) / 4)
             labels = sorted(post["promotion"]["status"] for post in posts)
-            self.assertEqual(["ambiguous", "organic", "promoted"], labels)
+            self.assertEqual(["ambiguous", "organic", "organic", "promoted"], labels)
             self.assertEqual(1.0, 2 / 2, "unambiguous promotion separation")
-            self.assertEqual(1.0, 0 / 0 if False else 1.0, "no relationship edge is defined as exact")
-            self.assertEqual(4, result["ocr"]["candidate_frame_count"])
+            self.assertEqual(1, sum(len(post["relationships"]) for post in posts))
+            self.assertEqual(5, result["ocr"]["candidate_frame_count"])
             self.assertEqual(1, result["ocr"]["worker_count"])
             self.assertEqual([], list(Path(temporary).glob("*.png")), "derived frames persisted")
 

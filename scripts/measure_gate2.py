@@ -74,7 +74,7 @@ def measure() -> dict:
                 started = time.perf_counter()
                 ingest(movie, (0, 0, 1280, 720), helper=recorder, synthetic=True)
                 recording_wall.append((time.perf_counter() - started) * 1000)
-        native = {"status": "MEASURED", "browser_vm_wall_ms": summary(browser_wall), "recording_ocr_wall_ms": summary(recording_wall), "recording_frames_per_run": 4, "recording_worker_count": 1, "child_max_rss": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, "max_rss_unit": "bytes"}
+        native = {"status": "MEASURED", "browser_vm_wall_ms": summary(browser_wall), "recording_ocr_wall_ms": summary(recording_wall), "recording_frames_per_run": 5, "recording_worker_count": 1, "child_max_rss": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, "max_rss_unit": "bytes"}
     return {
         "measurement_version": "gate2-resource-v1",
         "hardware_runtime": {"os": platform.platform(), "machine": platform.machine(), "processor": command_value(["sysctl", "-n", "machdep.cpu.brand_string"]) if sys.platform == "darwin" else platform.processor(), "physical_memory_bytes": int(command_value(["sysctl", "-n", "hw.memsize"]) or 0) if sys.platform == "darwin" else None, "python": platform.python_version(), "sqlite": sqlite3.sqlite_version},

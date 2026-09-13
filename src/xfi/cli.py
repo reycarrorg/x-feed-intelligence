@@ -9,11 +9,11 @@ from pathlib import Path
 
 from .analysis import aggregate_authors, analyze_posts, build_model_handoff
 from .canonical import pretty_bytes
-from .errors import XFIError
+from .errors import ValidationError, XFIError
 from .render import atomic_write, private_json, private_markdown, sanitize
 from .recording import ingest as ingest_recording, preflight as preflight_recording
 from .store import Store
-from .validation import load_and_validate_envelope
+from .validation import load_and_validate_envelope, read_bounded_file
 
 
 def repository_root() -> Path:
@@ -21,7 +21,14 @@ def repository_root() -> Path:
 
 
 def load_envelope(path: Path) -> dict:
-    return load_and_validate_envelope(path.read_bytes(), repository_root() / "schemas" / "v1")
+    return load_and_validate_envelope(read_bounded_file(path), repository_root() / "schemas" / "v1")
+
+
+def load_json(path: Path, maximum: int = 262_144) -> dict:
+    try:
+        return json.loads(read_bounded_file(path, maximum))
+    except json.JSONDecodeError:
+        raise ValidationError("REJECTED_SCHEMA") from None
 
 
 def run(arguments: list[str] | None = None) -> int:
@@ -57,6 +64,24 @@ def run(arguments: list[str] | None = None) -> int:
     recording_ingest.add_argument("--crop", nargs=4, type=int, metavar=("X", "Y", "WIDTH", "HEIGHT"), required=True)
     recording_ingest.add_argument("--interval-ms", type=int, default=1000)
     recording_ingest.add_argument("--output", type=Path, required=True)
+    backup = sub.add_parser("backup")
+    backup.add_argument("--database", type=Path, required=True)
+    backup.add_argument("--output", type=Path, required=True)
+    backup.add_argument("--created-on", required=True)
+    restore = sub.add_parser("restore")
+    restore.add_argument("backup", type=Path)
+    restore.add_argument("--output", type=Path, required=True)
+    purge_preview = sub.add_parser("purge-preview")
+    purge_preview.add_argument("--database", type=Path, required=True)
+    purge_preview.add_argument("--session", required=True)
+    purge = sub.add_parser("purge")
+    purge.add_argument("--database", type=Path, required=True)
+    purge.add_argument("--session", required=True)
+    purge.add_argument("--confirm-session", required=True)
+    purge.add_argument("--no-vacuum", action="store_true")
+    review = sub.add_parser("review-decision")
+    review.add_argument("decision", type=Path)
+    review.add_argument("--database", type=Path, required=True)
     args = parser.parse_args(arguments)
     try:
         if args.command == "validate":
@@ -81,11 +106,11 @@ def run(arguments: list[str] | None = None) -> int:
                 data = private_json(session, posts, analyses, aggregate_authors(posts, analyses)) if args.format == "json" else private_markdown(session, posts, analyses)
                 atomic_write(args.output, data)
                 store.register_export(args.session, args.output, "PRIVATE", session["started_at"][:10])
-                result = {"status": "PRIVATE_REPORT_CREATED", "path": str(args.output.resolve())}
+                result = {"status": "PRIVATE_REPORT_CREATED", "path": str(args.output.resolve()), "sensitivity": "PRIVATE", "caveat": "This export is a separate retained file and is not deleted by database session purge."}
         elif args.command == "sanitize":
-            clean = sanitize(json.loads(args.source.read_text(encoding="utf-8")))
+            clean = sanitize(load_json(args.source, 5_242_880))
             atomic_write(args.output, pretty_bytes(clean))
-            result = {"status": "SANITIZED_EXPORT_CREATED", "path": str(args.output.resolve()), "content_digest": clean["content_digest"]}
+            result = {"status": "SANITIZED_EXPORT_CREATED", "path": str(args.output.resolve()), "content_digest": clean["content_digest"], "sensitivity": "SANITIZED", "caveat": "Sanitized prose can still contain contextual identity clues; review before sharing."}
         elif args.command == "model-handoff":
             with Store(args.database) as store:
                 packet = build_model_handoff(store.list_posts(args.session), args.format)
@@ -93,10 +118,27 @@ def run(arguments: list[str] | None = None) -> int:
             result = {"status": "CAPABILITY_FREE_HANDOFF_CREATED", "path": str(args.output.resolve())}
         elif args.command == "recording-preflight":
             result = {"status": "RECORDING_PREFLIGHT_OK", **preflight_recording(args.recording, tuple(args.crop), interval_ms=args.interval_ms)}
-        else:
+        elif args.command == "recording-ingest":
             value = ingest_recording(args.recording, tuple(args.crop), interval_ms=args.interval_ms)
             atomic_write(args.output, pretty_bytes(value["envelope"]))
             result = {"status": "RECORDING_PACKET_CREATED", "path": str(args.output.resolve()), "preflight": value["preflight"], "ocr": value["ocr"]}
+        elif args.command == "backup":
+            with Store(args.database) as store:
+                result = {"status": "BACKUP_CREATED", **store.backup(args.output, args.created_on), "caveat": "A backup is a separate retained copy and is not removed by session purge."}
+        elif args.command == "restore":
+            result = {**Store.restore(args.backup, args.output), "path": str(args.output.resolve()), "caveat": "Restore creates an isolated copy and never overwrites an existing database."}
+        elif args.command == "purge-preview":
+            with Store(args.database) as store:
+                result = {"status": "PURGE_PREVIEW", **store.purge_preview(args.session)}
+        elif args.command == "purge":
+            if args.confirm_session != args.session:
+                raise XFIError("PURGE_CONFIRMATION_MISMATCH")
+            with Store(args.database) as store:
+                result = store.purge_session(args.session, vacuum=not args.no_vacuum)
+        else:
+            with Store(args.database) as store:
+                store.add_review_decision(load_json(args.decision))
+            result = {"status": "REVIEW_DECISION_RECORDED", "performed_account_action": False}
         print(json.dumps(result, sort_keys=True))
         return 0
     except (XFIError, OSError, ValueError, KeyError, TypeError) as error:

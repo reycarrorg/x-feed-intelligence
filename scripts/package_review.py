@@ -66,6 +66,8 @@ def check_inputs(paths: list[Path], entries: list[tuple[str, bytes, bool]], sbom
     lock = json.loads((ROOT / "DEPENDENCIES.lock.json").read_text())
     if lock["product_dependencies"] != [] or len(lock["ci_dependencies"]) != 1:
         raise SystemExit("dependency lock scope mismatch")
+    if [item.get("name") for item in lock.get("test_dependencies", [])] != ["playwright-core", "Chrome for Testing"]:
+        raise SystemExit("test-only browser dependency inventory mismatch")
     if sbom["metadata"]["component"]["hashes"][0]["content"] != source_digest(entries):
         raise SystemExit("SBOM source digest mismatch; run --update-sbom")
     for path in paths:
@@ -77,6 +79,9 @@ def check_inputs(paths: list[Path], entries: list[tuple[str, bytes, bool]], sbom
     for relative, data, _executable in entries:
         if any(marker in data for marker in FORBIDDEN_BYTES):
             raise SystemExit(f"test marker leaked into package: {relative}")
+    prohibited_names = {"package.json", ".npmrc", "pnpm-lock.yaml"}
+    if any(Path(relative).name in prohibited_names or "node_modules" in Path(relative).parts or "browser-runtime" in relative for relative, _data, _executable in entries):
+        raise SystemExit("test-only browser stack leaked into package")
     proposal = json.loads((ROOT / "contracts/v1/manifest.proposal.json").read_text())
     if proposal.get("permissions") != ["storage", "scripting"] or proposal.get("optional_host_permissions") != ["https://x.com/*"] or "host_permissions" in proposal:
         raise SystemExit("static production proposal permission drift")
@@ -113,7 +118,7 @@ def verify_reproducible() -> dict:
             raise SystemExit("package is not reproducible")
         with zipfile.ZipFile(one) as archive:
             names = archive.namelist()
-            if any("harness" in name or "fixture" in name or name.endswith("browser.py") for name in names):
+            if any("harness" in name or "fixture" in name or name.endswith("browser.py") or name.endswith(("package.json", "pnpm-lock.yaml", ".npmrc")) or "node_modules" in name or "browser-runtime" in name for name in names):
                 raise SystemExit("promotion guard failed")
         return {**first, "path": "temporary verification artifact", "reproducible": True}
 

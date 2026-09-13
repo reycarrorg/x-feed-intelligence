@@ -13,7 +13,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "c7ca9f16e368c9a8e314b15fe8846c288bb432f6472836820dd50d905cf053b1"
+          "content": "4c801c5833af2bba0f07fdf6499b5c134d056c18dcadaf3ab9b30a44d9ffda90"
         }
       ],
       "licenses": [
@@ -36,6 +36,67 @@
     }
   },
   "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/playwright-core@1.63.0",
+      "name": "playwright-core",
+      "version": "1.63.0",
+      "scope": "excluded",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "208593d4e1bcd8f8fe5f869cad1cc332dc7f1d70dc1d58c102dc3ac36e30f26c"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.63.0.tgz"
+        }
+      ],
+      "properties": [
+        {
+          "name": "xfi:scope",
+          "value": "test-only browser control; excluded from product package"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:generic/chrome-for-testing@153.0.8010.36?platform=mac-arm64",
+      "name": "Chrome for Testing",
+      "version": "153.0.8010.36",
+      "scope": "excluded",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "1f701ef60757c63c6ccf98afaf28291dd0c8d1457d3d738e81fd62201c230ad0"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://storage.googleapis.com/chrome-for-testing-public/153.0.8010.36/mac-arm64/chrome-mac-arm64.zip"
+        }
+      ],
+      "properties": [
+        {
+          "name": "xfi:scope",
+          "value": "test-only isolated MV3 runtime; excluded from product package"
+        },
+        {
+          "name": "xfi:signature-boundary",
+          "value": "outer app does not pass strict distribution-signature verification; exact archive hash is mandatory"
+        }
+      ]
+    },
     {
       "type": "application",
       "bom-ref": "pkg:github/actions/checkout@v7.0.1?commit=3d3c42e5aac5ba805825da76410c181273ba90b1",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import stat
 from datetime import date, datetime
 from pathlib import Path
 
@@ -14,6 +15,26 @@ MAX_PACKET_BYTES = 5_242_880
 MAX_DEPTH = 64
 SENSITIVE_KEYS = re.compile(r"(?i)(authorization|auth[_-]?token|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|bearer|cookie|csrf|password|session[_-]?(?:token|storage)|local[_-]?storage|browser[_-]?profile|direct[_-]?messages?|notifications?|payment|har)")
 SECRET_VALUES = re.compile(r"(?i)(?:bearer\s+[a-z0-9._-]{12,}|-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----)")
+
+
+def read_bounded_file(path: Path, maximum: int = MAX_PACKET_BYTES) -> bytes:
+    """Reject links/non-regular/oversized inputs before opening, then cap the read."""
+    try:
+        metadata = path.lstat()
+    except OSError:
+        raise ValidationError("REJECTED_INPUT_FILE") from None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ValidationError("REJECTED_INPUT_FILE")
+    if metadata.st_size > maximum:
+        raise ValidationError("REJECTED_PACKET_LIMIT")
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(maximum + 1)
+    except OSError:
+        raise ValidationError("REJECTED_INPUT_FILE") from None
+    if len(raw) > maximum:
+        raise ValidationError("REJECTED_PACKET_LIMIT")
+    return raw
 
 
 def nested_depth(value: object) -> int:

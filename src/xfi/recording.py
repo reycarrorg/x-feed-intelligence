@@ -6,6 +6,7 @@ import json
 import hashlib
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -45,9 +46,17 @@ def find_helper(explicit: Path | None = None) -> Path:
 
 
 def preflight(path: Path, crop: tuple[int, int, int, int], *, helper: Path | None = None, interval_ms: int = 1_000) -> dict:
-    source = path.resolve()
-    if not source.is_file() or source.is_symlink():
+    try:
+        metadata = path.lstat()
+    except OSError:
+        raise XFIError("RECORDING_FILE_REJECTED") from None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
         raise XFIError("RECORDING_FILE_REJECTED")
+    if metadata.st_size <= 0 or metadata.st_size > MAX_FILE_BYTES:
+        raise XFIError("RECORDING_FILE_LIMIT")
+    if not isinstance(interval_ms, int) or isinstance(interval_ms, bool) or interval_ms <= 0 or interval_ms > MAX_DURATION_SECONDS * 1000:
+        raise XFIError("RECORDING_INTERVAL_REJECTED")
+    source = path.resolve()
     if source.suffix.lower() not in {".mov", ".mp4", ".m4v"}:
         raise XFIError("RECORDING_CONTAINER_REJECTED")
     info = _run(find_helper(helper), ["metadata", str(source)])
@@ -86,12 +95,24 @@ def ingest(path: Path, crop: tuple[int, int, int, int], *, helper: Path | None =
         ambiguous = not text or bool(text and "review required" in text.lower())
         author_label = lines[0]["text"] if lines else "unknown"
         author_id = "ocr-author-" + hashlib.sha256(author_label.casefold().encode()).hexdigest()[:12]
+        synthetic_identity = None
+        if synthetic and text:
+            identity_by_text = {
+                "deterministic local workshop on day 7": "shared-source-001",
+                "useful context quoting the workshop": "shared-quote-001",
+                "invented notebook offer": "shared-promoted-001",
+                "partial evidence": "shared-ambiguous-001",
+            }
+            synthetic_identity = next((identity for marker, identity in identity_by_text.items() if marker in text.casefold()), None)
+        provenance_id = f"{session_id}-provenance-{index:03d}"
+        is_quote = synthetic_identity == "shared-quote-001"
+        relationships = [{"kind": "quotes", "source_local_post_id": "synthetic-source-shared-source-001", "source_platform_post_id": "shared-source-001", "confidence": confidence, "provenance_ids": [provenance_id]}] if is_quote else []
         observations.append({
             "observation_id": f"{session_id}-observation-{index:03d}", "session_id": session_id, "appearance_index": index, "top_level": True, "visibility_ratio": 1.0, "document_visible": True,
-            "platform_post_id": None, "canonical_permalink": None, "visible_text": text, "displayed_timestamp": "recording-visible-card",
-            "authors": [{"local_author_id": author_id, "platform_author_id": None, "display_name": author_label if lines else None, "handle": None, "role": "original", "identity_confidence": confidence, "uncertainty_codes": [] if lines else ["OCR_AUTHOR_UNREADABLE"]}],
-            "relationships": [], "media": [], "promotion": {"status": "promoted" if promoted else ("ambiguous" if ambiguous else "organic"), "evidence": ["visible_label"] if promoted else (["layout_marker"] if ambiguous else ["none"]), "confidence": confidence},
-            "provenance": [{"provenance_id": f"{session_id}-provenance-{index:03d}", "modality": "synthetic_recording" if synthetic else "manual", "collector_version": "recording-ingest-1", "parser_or_ocr_version": "apple-vision-platform", "field": "visible_text", "observed_at": now, "video_time_ms": frame["video_time_ms"], "crop_xywh": list(crop), "confidence": confidence}],
+            "platform_post_id": synthetic_identity, "canonical_permalink": None, "visible_text": text, "displayed_timestamp": "recording-visible-card",
+            "authors": [{"local_author_id": author_id, "platform_author_id": None, "display_name": author_label if lines else None, "handle": None, "role": "quoting" if is_quote else "original", "identity_confidence": confidence, "uncertainty_codes": [] if lines else ["OCR_AUTHOR_UNREADABLE"]}],
+            "relationships": relationships, "media": [], "promotion": {"status": "promoted" if promoted else ("ambiguous" if ambiguous else "organic"), "evidence": ["visible_label"] if promoted else (["layout_marker"] if ambiguous else ["none"]), "confidence": confidence},
+            "provenance": [{"provenance_id": provenance_id, "modality": "synthetic_recording" if synthetic else "manual", "collector_version": "recording-ingest-1", "parser_or_ocr_version": "apple-vision-platform", "field": "visible_text", "observed_at": now, "video_time_ms": frame["video_time_ms"], "crop_xywh": list(crop), "confidence": confidence}],
             "uncertainty": [] if not ambiguous else [{"code": "OCR_PARTIAL", "field": "visible_text", "severity": "blocking", "requires_review": True, "safe_detail": "OCR evidence requires human review."}],
             "input_location": {"viewport_time_ms": None, "video_time_ms": frame["video_time_ms"], "crop_xywh": list(crop)},
         })

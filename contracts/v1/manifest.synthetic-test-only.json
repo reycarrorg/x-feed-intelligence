@@ -1,10 +1,18 @@
 {
   "manifest_version": 3,
   "name": "TEST ONLY — X Feed Intelligence Synthetic Harness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "NON-DISTRIBUTABLE test harness for authored fixtures at the reserved synthetic origin only.",
   "permissions": ["storage"],
   "host_permissions": ["https://fixture.example.invalid/*"],
+  "action": {
+    "default_popup": "control.html",
+    "default_title": "TEST ONLY — synthetic collector controls"
+  },
+  "background": {
+    "service_worker": "synthetic-background.js",
+    "type": "module"
+  },
   "content_scripts": [
     {
       "matches": ["https://fixture.example.invalid/*"],

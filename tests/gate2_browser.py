@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -14,6 +16,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xfi.browser import browser_runtime_preflight, promotion_safe
+from xfi.analysis import analyze_posts
+from xfi.store import Store
+from xfi.validation import load_and_validate_envelope
 
 
 class BrowserHarnessTests(unittest.TestCase):
@@ -29,6 +34,8 @@ class BrowserHarnessTests(unittest.TestCase):
             self.assertNotIn(forbidden, tree)
         self.assertEqual(["https://fixture.example.invalid/*"], self.manifest["host_permissions"])
         self.assertEqual(["storage"], self.manifest["permissions"])
+        self.assertEqual("control.html", self.manifest["action"]["default_popup"])
+        self.assertEqual("synthetic-background.js", self.manifest["background"]["service_worker"])
         script = (ROOT / "harness/synthetic/synthetic-harness.js").read_text()
         for required in ("MutationObserver", "IntersectionObserver", "document.visibilityState", "getClientRects", "USER_START", "USER_EXPORT", "detach"):
             self.assertIn(required, script)
@@ -44,6 +51,9 @@ class BrowserHarnessTests(unittest.TestCase):
         self.assertIn('role="status"', control)
         self.assertIn("State: INACTIVE", control)
         self.assertIn("color is never the only signal", control)
+        self.assertIn("synthetic-control.js", control)
+        controls = (ROOT / "harness/synthetic/synthetic-control.js").read_text()
+        self.assertIn('addEventListener("click"', controls)
 
     def test_promotion_guard_positive_and_negative_controls(self):
         paths = ["manifest.json", "src/xfi/cli.py", "NOTICE", "bom.json"]
@@ -68,12 +78,14 @@ class BrowserHarnessTests(unittest.TestCase):
         value = json.loads(result.stdout)
         self.assertEqual(["INACTIVE", True, "ARMED", True, "CAPTURING"], value["lifecycle"])
         self.assertTrue(value["edgeAccepted"])
-        self.assertFalse(value["sameIdentityMutation"])
+        self.assertTrue(value["sameIdentityMutation"])
         self.assertTrue(value["reusedNodeAccepted"])
+        self.assertTrue(value["quoteAccepted"])
         self.assertTrue(value["ambiguousAccepted"])
         self.assertFalse(value["hiddenAccepted"])
         self.assertFalse(value["belowAccepted"])
-        self.assertEqual(3, value["exportRecordCount"])
+        self.assertEqual(5, value["exportRecordCount"])
+        self.assertEqual(10, value["utf8ByteCount"])
         self.assertEqual("STOPPED", value["stopped"]["state"])
         self.assertFalse(value["postStopAccepted"])
         self.assertTrue(all(count == 0 for count in value["stopped"]["effects"].values()))
@@ -86,6 +98,30 @@ class BrowserHarnessTests(unittest.TestCase):
             self.assertEqual(0, stopped["domReferenceCount"])
             self.assertFalse(stopped["postStopAccepted"])
             self.assertTrue(stopped["queueStable"])
+
+    @unittest.skipUnless(sys.platform == "darwin" and os.environ.get("XFI_RUN_REAL_BROWSER") == "1", "opt-in exact reviewed browser artifact required")
+    def test_real_mv3_fresh_profile_reserved_mapping_and_shared_pipeline(self):
+        node = os.environ.get("XFI_NODE_BINARY", "node")
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "browser-envelope.json"
+            completed = subprocess.run([node, str(ROOT / "tests/browser/run-mv3-integration.mjs"), "--output", str(output)], cwd=ROOT, check=True, capture_output=True, text=True)
+            evidence = json.loads(completed.stdout)
+            envelope = load_and_validate_envelope(output.read_bytes(), ROOT / "schemas/v1")
+            truth = json.loads((ROOT / "fixtures/gate2/shared-corpus.json").read_text())
+            expected_ids = {item["identity"] for item in truth["expected_units"]}
+            actual_ids = {item["platform_post_id"] for item in envelope["observations"]}
+            self.assertEqual(expected_ids, actual_ids)
+            self.assertEqual(1, sum(len(item["relationships"]) for item in envelope["observations"]))
+            database = Path(temporary) / "shared.sqlite"
+            with Store(database) as store:
+                imported = store.import_envelope(envelope)
+                posts = store.list_posts(imported.session_id)
+                analyses = analyze_posts(posts)
+            self.assertEqual(4, len(posts))
+            self.assertEqual(2, len(analyses), "promoted and ambiguous units must not enter organic analysis")
+            self.assertTrue(evidence["fresh_profile"] and evidence["reserved_host_mapped"] and evidence["hidden_canaries_excluded"])
+            self.assertGreater(evidence["network"]["allowed_fixture_tunnels"], 0)
+            self.assertGreater(evidence["network"]["denied_requests"], 0)
 
 
 if __name__ == "__main__": unittest.main(verbosity=2)

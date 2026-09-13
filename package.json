@@ -1,0 +1,17 @@
+{
+  "name": "x-feed-intelligence-gate2-browser-tests",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Test-only isolated MV3 browser integration; never distributed with the product.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test:browser": "node tests/browser/run-mv3-integration.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

@@ -1,8 +1,8 @@
 # Dependency Lock, Notice, and SBOM Plan
 
-## Gate 1 decision
+## Gate 1 decision and Gate 2 test adoption
 
-Gate 1 adopts no third-party package. Its executable acceptance logic uses the Python standard library and platform shell tools already required by the repository. [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) exists before any future dependency lands and currently records an empty adopted-dependency set.
+Gate 1 adopted no third-party package. Its executable acceptance logic uses the Python standard library and platform shell tools already required by the repository. [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) existed before dependency adoption. Gate 2 now adopts exactly two excluded test components: `playwright-core` 1.63.0 and one pinned Chrome-for-Testing 153.0.8010.36/mac-arm64 archive. Neither is a product dependency or package input; the exact artifacts, hashes, licenses, lifecycle/network/telemetry behavior, maintenance/advisory review, signature boundary, and allow decision are recorded in the dependency lock, notices, SBOM, and Gate 2 evidence.
 
 Platform facilities such as Python's standard library, SQLite supplied by the selected runtime, and Apple SDK frameworks are environment prerequisites rather than vendored packages; their runtime versions still belong in build/test evidence. FFmpeg remains a user-installed executable proposal, not an adopted or bundled dependency.
 
@@ -27,7 +27,7 @@ No floating versions, git branches, curl-pipe-shell installers, remote scripts, 
 - Start the analyzer and schema validator with the standard library and platform SQLite. Do not add an ORM until measured complexity justifies it.
 - Invoke a separately installed FFmpeg only after version/configuration probing, resource sandboxing, malicious-media tests, and user-facing availability diagnostics. Bundling requires a distinct LGPL/GPL/nonfree review.
 - Use Apple Vision through the platform SDK on macOS; record deployment target and API availability.
-- Defer WXT and Playwright until the synthetic extension slice needs them. If adopted, pin exact versions, disable unnecessary install downloads/scripts, inventory transitives, keep Playwright on the isolated reserved-origin harness with outbound traffic denied, and inspect both emitted manifests/bundles. The production proposal is static-only through Gate 2; packaging must fail if the reserved test origin, test-only markers, harness script/manifest, or fixture tree appears in a production candidate.
+- WXT remains deferred. The synthetic extension slice adopted Playwright Core without the wrapper, with an exact one-package lock and lifecycle scripts disabled. The browser installer was dry-run only; it disclosed Chrome, FFmpeg, and a headless shell. Only the exact Chrome archive was directly downloaded and hash-pinned, while FFmpeg and the headless shell remained excluded. The production proposal is static-only through Gate 2; packaging fails if the reserved test origin, test-only markers, harness/control/service-worker files, package metadata, Node modules, browser artifacts, browser runner, or fixture tree appears in a production candidate.
 - OpenCV, PySceneDetect and GRDB.swift require benchmark evidence. Tesseract remains on hold. All rejected Gate 0 projects remain prohibited.
 
 ## CI evidence
