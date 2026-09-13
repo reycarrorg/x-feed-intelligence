@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEST ONLY — Synthetic Harness Controls</title>
+<style>
+  :root { color-scheme: light dark; font: 18px system-ui; }
+  body { max-width: 42rem; margin: 2rem auto; padding: 1rem; }
+  button { min-width: 10rem; min-height: 3rem; margin: .4rem; font: inherit; }
+  button:focus { outline: .2rem solid currentColor; outline-offset: .15rem; }
+  #state { border: .15rem solid currentColor; padding: 1rem; font-weight: 700; }
+</style>
+<h1>TEST ONLY — NON-DISTRIBUTABLE</h1>
+<p id="state" role="status" aria-live="polite">State: INACTIVE</p>
+<nav aria-label="Synthetic collector lifecycle controls">
+  <button type="button" aria-label="Arm synthetic collector">Arm</button>
+  <button type="button" aria-label="Start synthetic capture">Start</button>
+  <button type="button" aria-label="Export synthetic packet">Export</button>
+  <button type="button" aria-label="Stop synthetic capture">Stop</button>
+  <button type="button" aria-label="Discard synthetic draft">Discard</button>
+</nav>
+<p>State is always conveyed in text; color is never the only signal.</p>
+</html>
+
