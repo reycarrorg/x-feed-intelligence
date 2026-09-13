@@ -17,9 +17,9 @@
     {
       "matches": ["https://fixture.example.invalid/*"],
       "js": ["synthetic-harness.js"],
-      "run_at": "document_idle",
+      "all_frames": false,
       "world": "ISOLATED",
-      "all_frames": false
+      "run_at": "document_idle"
     }
   ],
   "content_security_policy": {

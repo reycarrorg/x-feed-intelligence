@@ -1,0 +1,89 @@
+{
+  "lock_format": "xfi-dependency-lock-v1",
+  "reviewed_on": "2026-09-13",
+  "package_manager": "pnpm 11.19.0 (test dependency lock only; lifecycle scripts disabled)",
+  "product_dependencies": [],
+  "test_dependencies": [
+    {
+      "name": "playwright-core",
+      "owner": "Microsoft Corporation",
+      "source": "https://github.com/microsoft/playwright",
+      "registry_source": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.63.0.tgz",
+      "version": "1.63.0",
+      "revision": "v1.63.0",
+      "sha256": "208593d4e1bcd8f8fe5f869cad1cc332dc7f1d70dc1d58c102dc3ac36e30f26c",
+      "registry_integrity": "sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==",
+      "license": "Apache-2.0",
+      "scope": "Test-only MV3 browser control; excluded from the product package",
+      "lifecycle": "No package lifecycle scripts declared; repository .npmrc requests ignore-scripts=true and the reviewed pnpm command explicitly supplies --ignore-scripts",
+      "network": "Browser control over a local pipe; package CLI can download browsers but that path is not used",
+      "telemetry": "No Playwright telemetry configured; tracing, screenshots, video, and remote services disabled",
+      "generated_code": "Prebuilt JavaScript and WebAssembly from the immutable npm artifact; test-only",
+      "permissions": "No product permission; test runner launches a fresh temporary profile",
+      "maintenance": "Official repository active and unarchived; v1.63.0 published 2026-09-04",
+      "advisory_review": "Official repository security-advisory list returned zero entries on 2026-09-13; absence is not proof of safety",
+      "decision": "allow test-only with scripts disabled; exclude from product package and runtime"
+    },
+    {
+      "name": "Chrome for Testing",
+      "owner": "Google LLC and Chromium contributors",
+      "source": "https://github.com/GoogleChromeLabs/chrome-for-testing",
+      "distribution_source": "https://storage.googleapis.com/chrome-for-testing-public/153.0.8010.36/mac-arm64/chrome-mac-arm64.zip",
+      "version": "153.0.8010.36",
+      "revision": "Chromium SCM 507c6ee3e2f3b2ca0e660547e5b9ea4820c67f4c; refs/branch-heads/8010 at 906",
+      "platform": "mac-arm64; macOS 13 or later",
+      "archive_sha256": "1f701ef60757c63c6ccf98afaf28291dd0c8d1457d3d738e81fd62201c230ad0",
+      "launcher_sha256": "bfe18f25f912e28e567164f823efbcbf0a87c5292bd66566b6cce7861086d789",
+      "license": "Google Chrome Terms of Service plus Chromium and bundled third-party notices exposed by chrome://credits",
+      "scope": "Test-only isolated MV3 browser runtime; local ignored build cache only; excluded from product package",
+      "lifecycle": "Downloaded as one immutable HTTPS archive, integrity checked before extraction, never installed system-wide",
+      "network": "Forced through a local deny-by-default proxy; only fixture.example.invalid:443 maps to the local fixture server",
+      "telemetry": "Launched with a fresh temporary profile, metrics/background networking/component updates/sync disabled, and every non-fixture request denied and logged",
+      "generated_code": "Prebuilt browser executable and resources; no source incorporated into the product",
+      "permissions": "Executes only for the opt-in macOS browser integration test; no user browser profile or credentials",
+      "maintenance": "Official Chrome for Testing availability listed 153.0.8010.36 as Stable on 2026-09-12; the official Chrome release blog announced Chrome 153 stable on 2026-09-08",
+      "availability_source": "https://googlechromelabs.github.io/chrome-for-testing/",
+      "advisory_source": "https://chromereleases.googleblog.com/2026/09/stable-channel-update-for-desktop_0808145027.html",
+      "advisory_review": "Official Chrome 153.0.8010.36 stable release notes report 230 security fixes. The initially Playwright-pinned early-stable 153.0.8010.12 artifact was rejected after this check and replaced before final evidence; current-stable status is not proof that no vulnerability remains.",
+      "signature_review": "Outer test app is not distribution-signed; codesign --verify --deep --strict reports an invalid resource seal. The launcher is linker ad-hoc signed. Integrity therefore relies on the pinned HTTPS URL and exact archive/executable SHA-256 values.",
+      "excluded_components": "Playwright FFmpeg revision 1011 and Chromium headless-shell revision 1243 were disclosed by dry-run but were not downloaded or executed. Early-stable Chrome 153.0.8010.12 was downloaded and exercised during pre-adoption verification, then rejected as superseded; it is ignored local quarantine only and cannot satisfy the runner hash gate.",
+      "decision": "allow this exact archive for local test execution only after hash verification; block on any URL, version, platform, or hash drift"
+    }
+  ],
+  "ci_dependencies": [
+    {
+      "name": "actions/checkout",
+      "owner": "GitHub",
+      "source": "https://github.com/actions/checkout",
+      "version": "v7.0.1",
+      "revision": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "license": "MIT",
+      "scope": "CI source checkout only",
+      "lifecycle": "GitHub-hosted Node 24 action; fetches full history for base-to-head review and removes credentials in its post step",
+      "network": "GitHub repository fetch only",
+      "telemetry": "No product telemetry; GitHub Actions platform logging remains",
+      "generated_code": "Prebuilt dist/index.js executed only by GitHub Actions",
+      "permissions": "Workflow contents:read; persist-credentials:false",
+      "maintenance": "Official repository active and unarchived; v7.0.1 published 2026-07-20",
+      "advisory_review": "Official repository security-advisory list returned zero entries on 2026-09-12; absence is not proof of safety",
+      "decision": "allow CI-only at immutable revision; never package in the product"
+    }
+  ],
+  "platform_requirements": [
+    {
+      "name": "Python standard library with platform SQLite",
+      "minimum": "3.9",
+      "distribution": "environment-provided; not bundled"
+    },
+    {
+      "name": "Apple AVFoundation and Vision",
+      "minimum": "macOS 13 SDK/runtime for recording helper",
+      "distribution": "platform frameworks; not bundled"
+    },
+    {
+      "name": "Apple JavaScriptCore",
+      "minimum": "macOS 13 SDK/runtime for capability-denied harness evidence",
+      "distribution": "platform framework; not bundled"
+    }
+  ]
+}

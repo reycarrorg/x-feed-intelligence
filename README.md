@@ -4,7 +4,7 @@ X Feed Intelligence is a local-first project for turning user-supplied X/Twitter
 
 ## Status
 
-**Research Gate 0 is merged. Gate 1's contract and deterministic synthetic-evidence set is complete and awaiting review.** No production collector, analyzer, OCR pipeline, database, extension build, authenticated browser test, automated scrolling, social interaction, third-party dependency, or release has been implemented.
+**Research Gate 0 and the Gate 1 contract baseline are merged. Gate 2 is implemented on an unmerged private-review branch.** Gate 2 adds a recording-first CLI, strict normalized analysis core, product-owned SQLite store, Apple Vision recording helper, non-distributable reserved-origin harness, deterministic synthetic evidence, and a reproducible recording-only private package candidate. It does not authorize or claim live X access, an authenticated browser test, a distributable extension, automated scrolling, social interaction, signing, notarization, deployment, or release.
 
 The accepted Gate 0 architecture is a local hybrid with two independent inputs and one normalized analysis core:
 
@@ -39,6 +39,10 @@ Authenticated X testing requires the user. CAPTCHA, login challenges, rate limit
 - [Gate 1 synthetic fixture manifest](fixtures/synthetic/v1/manifest.json)
 - [Gate 1 review record](docs/gate1/REVIEW_RECORD.md)
 - [Gate 1 policy recheck](docs/gate1/POLICY_RECHECK.md)
+- [Gate 2 implementation and evidence](docs/gate2/README.md)
+- [Gate 2 private package boundary](docs/gate2/PACKAGE_BOUNDARY.md)
+- [Gate 2 security and privacy review](docs/gate2/SECURITY_PRIVACY_REVIEW.md)
+- [Gate 3 residual-risk and forbidden supervised test](docs/gate2/GATE3_RESIDUAL_RISK.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Security policy](SECURITY.md)
 

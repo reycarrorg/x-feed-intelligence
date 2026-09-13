@@ -1,0 +1,41 @@
+{
+  "fixture_kind": "AUTHORED_SYNTHETIC_SHARED_CORPUS",
+  "schema_version": "1.0.0",
+  "expected_units": [
+    {
+      "identity": "shared-source-001",
+      "visible_text": "Deterministic local workshop on day 7",
+      "promotion": "organic",
+      "relationships": []
+    },
+    {
+      "identity": "shared-quote-001",
+      "visible_text": "Useful context quoting the workshop",
+      "promotion": "organic",
+      "relationships": [
+        {"kind": "quotes", "source_identity": "shared-source-001"}
+      ]
+    },
+    {
+      "identity": "shared-promoted-001",
+      "visible_text": "Invented notebook offer",
+      "promotion": "promoted",
+      "relationships": []
+    },
+    {
+      "identity": "shared-ambiguous-001",
+      "visible_text": "Partial evidence",
+      "promotion": "ambiguous",
+      "relationships": []
+    }
+  ],
+  "expected_relationship_edges": [
+    {"from_identity": "shared-quote-001", "kind": "quotes", "to_identity": "shared-source-001"}
+  ],
+  "truth_rules": {
+    "identity_set_is_authoritative": true,
+    "changed_same_identity_is_additional_observation_not_additional_unit": true,
+    "promotion_and_ambiguity_are_excluded_from_organic_analysis": true
+  },
+  "provenance": "Authored for this repository; contains no captured platform data."
+}

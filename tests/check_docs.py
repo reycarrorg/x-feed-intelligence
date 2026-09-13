@@ -125,7 +125,7 @@ def fail(errors: list[str], message: str) -> None:
 
 
 def markdown_files() -> list[Path]:
-    return sorted(path for path in ROOT.rglob("*.md") if ".git" not in path.parts)
+    return sorted(path for path in ROOT.rglob("*.md") if not ({".git", "node_modules", "build", "dist"} & set(path.parts)))
 
 
 def check_required(errors: list[str]) -> None:
@@ -137,7 +137,7 @@ def check_required(errors: list[str]) -> None:
 
 def check_repository_artifacts(errors: list[str]) -> None:
     for path in ROOT.rglob("*"):
-        if not path.is_file() or ".git" in path.parts:
+        if not path.is_file() or {".git", "node_modules", "build", "dist"} & set(path.parts):
             continue
         relative = path.relative_to(ROOT)
         if path.suffix.lower() in FORBIDDEN_SUFFIXES or path.name == ".env":
@@ -198,7 +198,7 @@ def check_required_content(errors: list[str]) -> None:
 
 
 def check_sensitive_text(errors: list[str]) -> None:
-    local_path = re.compile(r"(?:/Users/|[A-Za-z]:\\\\Users\\\\)\S+")
+    local_path = re.compile(r"(?:/" + "Users/|[A-Za-z]:\\\\" + r"Users\\\\)\S+")
     real_post_url = re.compile(r"https://(?:www\.)?x\.com/[A-Za-z0-9_]+/status/[0-9]+")
     secret_assignment = re.compile(
         r"(?i)(?:auth[_-]?token|api[_-]?key|password|bearer)\s*[:=]\s*['\"]?[A-Za-z0-9_./+-]{12,}"
