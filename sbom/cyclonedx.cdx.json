@@ -13,7 +13,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "cc938096bcc7036cf4a426eb420ba29ba983f8798641c13b22e7724c0c9989d0"
+          "content": "c7ca9f16e368c9a8e314b15fe8846c288bb432f6472836820dd50d905cf053b1"
         }
       ],
       "licenses": [
@@ -38,9 +38,9 @@
   "components": [
     {
       "type": "application",
-      "bom-ref": "pkg:github/actions/checkout@v4.4.0?commit=11d5960a326750d5838078e36cf38b85af677262",
+      "bom-ref": "pkg:github/actions/checkout@v7.0.1?commit=3d3c42e5aac5ba805825da76410c181273ba90b1",
       "name": "actions/checkout",
-      "version": "v4.4.0",
+      "version": "v7.0.1",
       "scope": "excluded",
       "licenses": [
         {
@@ -52,7 +52,7 @@
       "externalReferences": [
         {
           "type": "vcs",
-          "url": "https://github.com/actions/checkout/tree/11d5960a326750d5838078e36cf38b85af677262"
+          "url": "https://github.com/actions/checkout/tree/3d3c42e5aac5ba805825da76410c181273ba90b1"
         }
       ],
       "properties": [

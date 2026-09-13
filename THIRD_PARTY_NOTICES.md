@@ -6,6 +6,6 @@ The executable product and tests use the Python standard library, platform SQLit
 
 ## CI-only dependency
 
-`actions/checkout` v4.4.0 at immutable revision `11d5960a326750d5838078e36cf38b85af677262` is used only on GitHub-hosted CI to fetch this repository with `contents: read` and `persist-credentials: false`. It is copyright GitHub, Inc. and contributors and licensed under the MIT License. Upstream source and license: <https://github.com/actions/checkout> and <https://github.com/actions/checkout/blob/11d5960a326750d5838078e36cf38b85af677262/LICENSE>. It is not included in the private package candidate.
+`actions/checkout` v7.0.1 at immutable revision `3d3c42e5aac5ba805825da76410c181273ba90b1` is used only on GitHub-hosted CI to fetch this repository with `contents: read`, `persist-credentials: false`, and full history for base-to-head review. It is copyright GitHub, Inc. and contributors and licensed under the MIT License. Upstream source and license: <https://github.com/actions/checkout> and <https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE>. It is not included in the private package candidate.
 
 Exact scope, network behavior, maintenance, advisory review, and the conditional allow decision are recorded in [`DEPENDENCIES.lock.json`](DEPENDENCIES.lock.json). Candidate components remain governed by [the dependency and SBOM plan](docs/gate1/DEPENDENCY_AND_SBOM_PLAN.md).

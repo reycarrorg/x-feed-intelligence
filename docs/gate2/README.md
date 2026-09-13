@@ -53,7 +53,7 @@ Core Python traced peak was 131,101 bytes; process maximum resident size was 18,
 
 Product third-party component count is zero. Python standard library, platform SQLite, AVFoundation, Vision, and JavaScriptCore are environment facilities and are not redistributed. FFmpeg, WXT, Playwright, and a browser binary were not adopted, downloaded, or executed.
 
-The existing CI-only `actions/checkout` dependency is pinned to v4.4.0 revision `11d5960a326750d5838078e36cf38b85af677262`, runs with `contents: read` and `persist-credentials: false`, is recorded in `DEPENDENCIES.lock.json`, and is excluded from the product package. Its official repository was active and unarchived; its official security-advisory list returned zero entries on 2026-09-12. That result is not proof of safety.
+The existing CI-only `actions/checkout` dependency is pinned to v7.0.1 revision `3d3c42e5aac5ba805825da76410c181273ba90b1`, runs on Node 24 with `contents: read`, `persist-credentials: false`, and full history for base-to-head review, is recorded in `DEPENDENCIES.lock.json`, and is excluded from the product package. Its official repository was active and unarchived; its official security-advisory list returned zero entries on 2026-09-12. That result is not proof of safety.
 
 `sbom/cyclonedx.cdx.json` is CycloneDX 1.5 and records zero product dependencies plus the excluded CI-only action. Packaging refuses fixture origin values, test markers, synthetic harness paths, fixture trees, the browser preflight module, symlinks, permission drift, stale SBOM source hashes, and silent destination overwrite. The exact final package SHA-256 is recorded in the pull request after the final-head build.
 
