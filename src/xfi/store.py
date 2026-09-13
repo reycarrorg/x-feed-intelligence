@@ -212,7 +212,7 @@ class Store:
         exports = [row[0] for row in self.connection.execute("SELECT export_path FROM exports WHERE session_id=? ORDER BY export_path", (session_id,))]
         return {"session_id": session_id, "observation_count": observations, "post_count": posts, "known_exports": exports, "backup_caveat": "Older backups, snapshots, and separately exported files are not altered."}
 
-    def purge_session(self, session_id: str, *, vacuum: bool = True, free_space_override: int | None = None, inject_failure: bool = False, temp_paths: list[Path] | None = None) -> dict:
+    def purge_session(self, session_id: str, *, vacuum: bool = True, free_space_override: int | None = None, inject_failure: bool = False, temp_paths: list[Path] | None = None, temp_root: Path | None = None) -> dict:
         child_ids = [row[0] for row in self.connection.execute("SELECT observation_id FROM observations WHERE session_id=?", (session_id,))]
         post_ids = [row[0] for row in self.connection.execute("SELECT DISTINCT local_post_id FROM post_observations JOIN observations USING(observation_id) WHERE session_id=?", (session_id,))]
         try:
@@ -238,6 +238,9 @@ class Store:
         temp_ok = True
         for path in temp_paths or []:
             try:
+                if temp_root is None or os.path.commonpath([str(path.resolve()), str(temp_root.resolve())]) != str(temp_root.resolve()) or path.is_symlink():
+                    temp_ok = False
+                    continue
                 path.unlink(missing_ok=True)
             except OSError:
                 temp_ok = False
@@ -274,6 +277,8 @@ class Store:
         backup, destination = backup.resolve(), destination.resolve()
         if destination.exists():
             raise StoreError("RESTORE_DESTINATION_EXISTS")
+        if not _is_local_path(destination) or not backup.is_file() or backup.stat().st_size > 5_242_880_000:
+            raise StoreError("RESTORE_PATH_REJECTED")
         source = sqlite3.connect(f"file:{backup}?mode=ro", uri=True)
         try:
             integrity = source.execute("PRAGMA integrity_check").fetchone()[0]

@@ -29,7 +29,7 @@ class RecordingTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "darwin", "Apple Vision is a macOS platform facility")
     def test_authored_synthetic_movie_preflight_ocr_tracking_and_metrics(self):
         helper = ROOT / "build" / "native" / "xfi-recording-helper"
-        if not helper.is_file():
+        if not helper.is_file() or (ROOT / "native/recording-helper/main.swift").stat().st_mtime > helper.stat().st_mtime:
             subprocess.run([str(ROOT / "scripts" / "build_recording_helper.sh"), str(helper.parent)], check=True)
         with tempfile.TemporaryDirectory() as temporary:
             movie = Path(temporary) / "authored-synthetic.mov"
@@ -62,4 +62,3 @@ class RecordingTests(unittest.TestCase):
 
 
 if __name__ == "__main__": unittest.main(verbosity=2)
-

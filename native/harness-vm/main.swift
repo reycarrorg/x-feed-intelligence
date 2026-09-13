@@ -13,11 +13,12 @@ let tests = #"""
   let now = 0;
   const clock = () => now;
   const h = new H.Harness(clock);
-  const base = {origin:H.RESERVED_ORIGIN, nodeKey:"node-a", identity:"post-a", visibleText:"Authored synthetic card", promotion:"organic", relationships:[], topology:"reviewed-v1", topLevel:true, ambiguityRatio:0, documentVisible:true, visibilityRatio:0.5};
+  const base = {origin:H.RESERVED_ORIGIN, nodeKey:"node-a", identity:"shared-organic-001", visibleText:"Deterministic local workshop on day 7", promotion:"organic", relationships:[], topology:"reviewed-v1", topLevel:true, ambiguityRatio:0, documentVisible:true, visibilityRatio:0.5};
   const lifecycle = [h.state, h.userArm(H.RESERVED_ORIGIN), h.state, h.userStart(), h.state];
   const edgeAccepted = h.candidate(base);
-  const sameIdentityMutation = h.candidate(Object.assign({}, base, {visibleText:"Authored synthetic card updated"}));
-  const reusedNodeAccepted = h.candidate(Object.assign({}, base, {identity:"post-b", visibleText:"Second authored card"}));
+  const sameIdentityMutation = h.candidate(Object.assign({}, base, {visibleText:"Deterministic local workshop on day 7 updated"}));
+  const reusedNodeAccepted = h.candidate(Object.assign({}, base, {identity:"shared-promoted-001", visibleText:"Invented notebook offer", promotion:"promoted"}));
+  const ambiguousAccepted = h.candidate(Object.assign({}, base, {nodeKey:"node-b", identity:"shared-ambiguous-001", visibleText:"Partial evidence", promotion:"ambiguous", ambiguityRatio:0.05}));
   h.documentHidden();
   const hiddenAccepted = h.candidate(Object.assign({}, base, {nodeKey:"hidden", identity:"hidden"}));
   h.documentVisible();
@@ -36,8 +37,8 @@ let tests = #"""
     stopResults[code] = {state:before.state, observerCount:before.observerCount, timerCount:before.timerCount, domReferenceCount:before.domReferenceCount, postStopAccepted:later, queueStable:before.queueCount === after.queueCount};
   });
   return JSON.stringify({
-    lifecycle, edgeAccepted, sameIdentityMutation, reusedNodeAccepted, hiddenAccepted, belowAccepted,
-    exportRecordCount: exportValue.records.length, stopped, postStopAccepted, stopResults,
+    lifecycle, edgeAccepted, sameIdentityMutation, reusedNodeAccepted, ambiguousAccepted, hiddenAccepted, belowAccepted,
+    exportRecordCount: exportValue.records.length, exportRecords: exportValue.records, stopped, postStopAccepted, stopResults,
     capabilities: {fetch:typeof fetch, xhr:typeof XMLHttpRequest, websocket:typeof WebSocket, document:typeof document},
   });
 })()
@@ -45,4 +46,3 @@ let tests = #"""
 let result = context.evaluateScript(tests)
 if failure != nil || result == nil { exit(2) }
 print(result!.toString()!)
-

@@ -1,0 +1,43 @@
+{
+  "lock_format": "xfi-dependency-lock-v1",
+  "reviewed_on": "2026-09-12",
+  "package_manager": null,
+  "product_dependencies": [],
+  "ci_dependencies": [
+    {
+      "name": "actions/checkout",
+      "owner": "GitHub",
+      "source": "https://github.com/actions/checkout",
+      "version": "v4.4.0",
+      "revision": "11d5960a326750d5838078e36cf38b85af677262",
+      "license": "MIT",
+      "scope": "CI source checkout only",
+      "lifecycle": "GitHub-hosted Node 20 action; fetches the triggering repository and removes credentials in its post step",
+      "network": "GitHub repository fetch only",
+      "telemetry": "No product telemetry; GitHub Actions platform logging remains",
+      "generated_code": "Prebuilt dist/index.js executed only by GitHub Actions",
+      "permissions": "Workflow contents:read; persist-credentials:false",
+      "maintenance": "Official repository active and unarchived; v4.4.0 published 2026-07-20",
+      "advisory_review": "Official repository security-advisory list returned zero entries on 2026-09-12; absence is not proof of safety",
+      "decision": "allow CI-only at immutable revision; never package in the product"
+    }
+  ],
+  "platform_requirements": [
+    {
+      "name": "Python standard library with platform SQLite",
+      "minimum": "3.9",
+      "distribution": "environment-provided; not bundled"
+    },
+    {
+      "name": "Apple AVFoundation and Vision",
+      "minimum": "macOS 13 SDK/runtime for recording helper",
+      "distribution": "platform frameworks; not bundled"
+    },
+    {
+      "name": "Apple JavaScriptCore",
+      "minimum": "macOS 13 SDK/runtime for capability-denied harness evidence",
+      "distribution": "platform framework; not bundled"
+    }
+  ]
+}
+

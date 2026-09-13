@@ -138,7 +138,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(6, preview["observation_count"])
             with self.assertRaises(StoreError): store.purge_session("synthetic-dom-001", inject_failure=True)
             self.assertEqual(1, store.connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0])
-            result = store.purge_session("synthetic-dom-001", vacuum=True, temp_paths=[derived])
+            result = store.purge_session("synthetic-dom-001", vacuum=True, temp_paths=[derived], temp_root=self.root)
             self.assertEqual("PURGE_COMPLETED", result["status"])
             self.assertEqual("TRUNCATED", result["checkpoint"])
             self.assertEqual("VACUUM_COMPLETED", result["vacuum"])
@@ -153,6 +153,15 @@ class StoreTests(unittest.TestCase):
             self.assertEqual("PURGE_INCOMPLETE", result["status"])
             self.assertEqual("VACUUM_NOT_RUN", result["vacuum"])
             self.assertNotIn("securely", result["message"])
+
+    def test_purge_refuses_unscoped_temp_deletion(self):
+        unrelated = self.root / "unrelated.txt"
+        unrelated.write_text("preserve")
+        with Store(self.db) as store:
+            store.import_envelope(self.envelope)
+            result = store.purge_session("synthetic-dom-001", vacuum=False, temp_paths=[unrelated])
+        self.assertEqual("PURGE_INCOMPLETE", result["status"])
+        self.assertTrue(unrelated.exists())
 
     def test_open_reader_reports_busy_checkpoint_without_post_stop_refs(self):
         with Store(self.db) as store:

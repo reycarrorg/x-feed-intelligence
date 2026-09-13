@@ -23,7 +23,16 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   schemas/v1/analysis.schema.json schemas/v1/envelope.schema.json \
   schemas/v1/model-handoff.schema.json \
   fixtures/synthetic/v1/manifest.json fixtures/synthetic/v1/dedup-role-collisions.json \
-  tests/gate1_acceptance.py; do
+  fixtures/gate2/shared-corpus.json DEPENDENCIES.lock.json sbom/cyclonedx.cdx.json \
+  docs/gate2/README.md docs/gate2/PACKAGE_BOUNDARY.md \
+  docs/gate2/SECURITY_PRIVACY_REVIEW.md docs/gate2/GATE3_RESIDUAL_RISK.md \
+  src/xfi/validation.py src/xfi/store.py src/xfi/analysis.py src/xfi/render.py \
+  src/xfi/recording.py src/xfi/browser.py \
+  harness/synthetic/manifest.json harness/synthetic/synthetic-harness.js \
+  native/recording-helper/main.swift native/harness-vm/main.swift \
+  scripts/package_review.py scripts/measure_gate2.py \
+  tests/gate1_acceptance.py tests/gate2_core.py tests/gate2_recording.py \
+  tests/gate2_browser.py tests/gate2_integration.py tests/gate2_security.py; do
   test -s "$repo_root/$path" || { echo "missing or empty: $path" >&2; exit 1; }
 done
 
@@ -40,4 +49,10 @@ grep -Fq 'No production version is currently supported' "$repo_root/SECURITY.md"
 grep -Fq 'Required Notice: Copyright © 2026 Rolando Carreon' "$repo_root/NOTICE"
 python3 "$repo_root/tests/check_docs.py"
 python3 "$repo_root/tests/gate1_acceptance.py"
-echo 'repository policy checks passed'
+PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_core.py"
+PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_browser.py"
+PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_recording.py"
+PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_integration.py"
+python3 "$repo_root/tests/gate2_security.py"
+python3 "$repo_root/scripts/package_review.py" --check
+echo 'repository policy and Gate 2 checks passed'

@@ -1,0 +1,72 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:91d0ebc8-308b-5b26-a49b-2be0f828dd1d",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-12T00:00:00Z",
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:generic/x-feed-intelligence@2.0.0-gate2",
+      "name": "x-feed-intelligence",
+      "version": "2.0.0-gate2",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "21929e7b40aa4f087ea15fdf91ebc8255f4c297afd51bcc8f575c43cc65c63ea"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "PolyForm Noncommercial License 1.0.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "xfi:distribution",
+          "value": "private review candidate only"
+        },
+        {
+          "name": "xfi:product-third-party-component-count",
+          "value": "0"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "pkg:github/actions/checkout@v4.4.0?commit=11d5960a326750d5838078e36cf38b85af677262",
+      "name": "actions/checkout",
+      "version": "v4.4.0",
+      "scope": "excluded",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/actions/checkout/tree/11d5960a326750d5838078e36cf38b85af677262"
+        }
+      ],
+      "properties": [
+        {
+          "name": "xfi:scope",
+          "value": "CI only; excluded from product package"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:generic/x-feed-intelligence@2.0.0-gate2",
+      "dependsOn": []
+    }
+  ]
+}

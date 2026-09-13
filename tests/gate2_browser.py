@@ -32,6 +32,9 @@ class BrowserHarnessTests(unittest.TestCase):
         script = (ROOT / "harness/synthetic/synthetic-harness.js").read_text()
         for required in ("MutationObserver", "IntersectionObserver", "document.visibilityState", "getClientRects", "USER_START", "USER_EXPORT", "detach"):
             self.assertIn(required, script)
+        lifecycle = json.loads((ROOT / "contracts/v1/extension-lifecycle.json").read_text())
+        for code in lifecycle["hard_stop_codes"]:
+            self.assertIn(f'"{code}"', script)
 
     def test_accessibility_controls_are_textual_keyboard_native_and_zoomable(self):
         control = (ROOT / "harness/synthetic/control.html").read_text()
@@ -59,7 +62,7 @@ class BrowserHarnessTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "darwin", "JavaScriptCore VM evidence is a macOS platform check")
     def test_capability_denied_vm_lifecycle_mutation_visibility_and_stops(self):
         binary = ROOT / "build/native/xfi-harness-vm"
-        if not binary.is_file():
+        if not binary.is_file() or (ROOT / "native/harness-vm/main.swift").stat().st_mtime > binary.stat().st_mtime:
             subprocess.run([str(ROOT / "scripts/build_harness_vm.sh"), str(binary.parent)], check=True)
         result = subprocess.run([str(binary), str(ROOT / "harness/synthetic/synthetic-harness.js")], check=True, capture_output=True, text=True)
         value = json.loads(result.stdout)
@@ -67,14 +70,15 @@ class BrowserHarnessTests(unittest.TestCase):
         self.assertTrue(value["edgeAccepted"])
         self.assertFalse(value["sameIdentityMutation"])
         self.assertTrue(value["reusedNodeAccepted"])
+        self.assertTrue(value["ambiguousAccepted"])
         self.assertFalse(value["hiddenAccepted"])
         self.assertFalse(value["belowAccepted"])
-        self.assertEqual(2, value["exportRecordCount"])
+        self.assertEqual(3, value["exportRecordCount"])
         self.assertEqual("STOPPED", value["stopped"]["state"])
         self.assertFalse(value["postStopAccepted"])
         self.assertTrue(all(count == 0 for count in value["stopped"]["effects"].values()))
         self.assertEqual({"fetch": "undefined", "xhr": "undefined", "websocket": "undefined", "document": "undefined"}, value["capabilities"])
-        self.assertEqual(12, len(value["stopResults"]))
+        self.assertEqual(23, len(value["stopResults"]))
         for stopped in value["stopResults"].values():
             self.assertEqual("ERROR", stopped["state"])
             self.assertEqual(0, stopped["observerCount"])

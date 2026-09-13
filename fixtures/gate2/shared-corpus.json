@@ -1,0 +1,23 @@
+{
+  "fixture_kind": "AUTHORED_SYNTHETIC_SHARED_CORPUS",
+  "schema_version": "1.0.0",
+  "expected_units": [
+    {
+      "identity": "shared-organic-001",
+      "visible_text": "Deterministic local workshop on day 7",
+      "promotion": "organic"
+    },
+    {
+      "identity": "shared-promoted-001",
+      "visible_text": "Invented notebook offer",
+      "promotion": "promoted"
+    },
+    {
+      "identity": "shared-ambiguous-001",
+      "visible_text": "Partial evidence",
+      "promotion": "ambiguous"
+    }
+  ],
+  "expected_relationship_edges": 0,
+  "provenance": "Authored for this repository; contains no captured platform data."
+}
