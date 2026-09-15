@@ -36,6 +36,7 @@ from x_core_store.exceptions import (
     APPLICATION_ID,
     BACKUP_CAVEATS,
     PURGE_CAVEATS,
+    PURGE_INCOMPLETE,
     REJECTED_COUNT_LIMIT,
     REJECTED_CREDENTIAL_FIELD,
     REJECTED_CREDENTIAL_VALUE,
@@ -56,7 +57,7 @@ from x_core_store.exceptions import (
     ValidationError,
 )
 from x_core_store.migrations import MIGRATIONS, migration_checksum
-from x_core_store.store import CanonicalStore, ReviewDecision
+from x_core_store.store import CanonicalStore, MAX_BACKUP_BYTES, ReviewDecision
 from x_core_store.validator import EnvelopeValidator, sensitive_category
 
 FIXTURES = ROOT / "fixtures" / "synthetic" / "v1"
@@ -559,6 +560,170 @@ class TestG21CanonicalStore(unittest.TestCase):
         # Verify recording session is preserved untouched
         self.assertIsNotNone(self.store.get_session("synthetic-recording-001"))
         self.assertEqual(len(self.store.list_canonical_posts("synthetic-recording-001")), 3)
+
+    # -------------------------------------------------------------------------
+    # 13. Regression tests for repair items
+    # -------------------------------------------------------------------------
+    def test_purge_session_busy_wal_yields_purge_incomplete(self) -> None:
+        dom_envelope = load_json(FIXTURES / "dom-session.json")
+        self.store.import_envelope(dom_envelope)
+
+        # Open concurrent connection and hold an active read lock to block checkpoint truncate
+        reader_conn = sqlite3.connect(str(self.db_path))
+        reader_cursor = reader_conn.cursor()
+        reader_cursor.execute("BEGIN;")
+        reader_cursor.execute("SELECT COUNT(*) FROM sessions;")
+
+        try:
+            with self.assertRaises(StoreError) as ctx:
+                self.store.purge_session("synthetic-dom-001")
+            self.assertEqual(ctx.exception.category, PURGE_INCOMPLETE)
+            self.assertIn("close active readers", ctx.exception.detail)
+        finally:
+            reader_conn.rollback()
+            reader_conn.close()
+
+    def test_restore_backup_rejects_oversized_and_incompatible_version(self) -> None:
+        dom_envelope = load_json(FIXTURES / "dom-session.json")
+        self.store.import_envelope(dom_envelope)
+        backup_file = self.temp_path / "valid_backup.sqlite"
+        self.store.create_backup(backup_file)
+
+        # 1. Reject incompatible schema version before target modification
+        incompatible_backup = self.temp_path / "incompatible_backup.sqlite"
+        shutil.copyfile(backup_file, incompatible_backup)
+        mod_conn = sqlite3.connect(str(incompatible_backup))
+        mod_conn.execute("PRAGMA user_version = 99;")
+        mod_conn.commit()
+        mod_conn.close()
+
+        target_db_path = self.temp_path / "target_db.sqlite"
+        with CanonicalStore(target_db_path, schemas_dir=SCHEMAS) as target_store:
+            # Populate target_store with sentinel session
+            rec_envelope = load_json(FIXTURES / "recording-session.json")
+            target_store.import_envelope(rec_envelope)
+            initial_sessions = target_store.list_sessions()
+            self.assertEqual(len(initial_sessions), 1)
+
+            with self.assertRaises(StoreError) as ctx:
+                target_store.restore_backup(incompatible_backup)
+            self.assertEqual(ctx.exception.category, "BACKUP_ERROR")
+            self.assertEqual(ctx.exception.detail, "Unsupported backup schema version")
+            # Live target database must remain completely unmodified
+            self.assertEqual(target_store.list_sessions(), initial_sessions)
+
+            # 2. Reject oversized backup file before target modification
+            oversized_backup = self.temp_path / "oversized_backup.sqlite"
+            with open(oversized_backup, "wb") as fp:
+                fp.seek(MAX_BACKUP_BYTES)
+                fp.write(b"x")
+
+            with self.assertRaises(StoreError) as ctx:
+                target_store.restore_backup(oversized_backup)
+            self.assertEqual(ctx.exception.category, "BACKUP_ERROR")
+            self.assertEqual(
+                ctx.exception.detail,
+                "Backup file size is invalid or exceeds maximum allowed boundary",
+            )
+            # Live target database must remain completely unmodified
+            self.assertEqual(target_store.list_sessions(), initial_sessions)
+
+    def test_purge_reporting_canonical_post_retained_by_recommendation(self) -> None:
+        dom_envelope = copy.deepcopy(load_json(FIXTURES / "dom-session.json"))
+        # Restrict observations to only the first one (single canonical post)
+        dom_envelope["observations"] = [dom_envelope["observations"][0]]
+        dom_envelope["content_digest"] = digest_without_field(dom_envelope)
+
+        single_store_path = self.temp_path / "single_post_store.sqlite"
+        with CanonicalStore(single_store_path, schemas_dir=SCHEMAS) as single_store:
+            res = single_store.import_envelope(dom_envelope)
+            self.assertEqual(res["canonical_posts_count"], 1)
+            posts = single_store.list_canonical_posts("synthetic-dom-001")
+            self.assertEqual(len(posts), 1)
+            retained_post_id = posts[0]["local_post_id"]
+
+            # Add an analysis recommendation referencing this post
+            cur = single_store.connection.cursor()
+            cur.execute("BEGIN IMMEDIATE;")
+            cur.execute(
+                """
+                INSERT INTO post_analyses (
+                    analysis_id, local_post_id, session_id, classification, manual_action,
+                    score_relevance, score_credibility, score_information_value, score_actionability,
+                    score_risk, score_priority, created_at
+                ) VALUES (?, ?, ?, 'organic', 'none', 5, 5, 5, 5, 1, 3, '2030-01-01T00:00:00Z');
+                """,
+                ("test-analysis-1", retained_post_id, None),
+            )
+            cur.execute(
+                """
+                INSERT INTO analysis_recommendations (
+                    analysis_id, recommendation_id, target_type, target_local_id, action,
+                    evidence_post_ids_json, qualifying_original_post_count, confidence, performed
+                ) VALUES (?, ?, 'post', ?, 'bookmark', '[]', 1, 1.0, 0);
+                """,
+                ("test-analysis-1", "rec-001", retained_post_id),
+            )
+            cur.execute("COMMIT;")
+
+            # Preview purge: canonical_posts_to_delete_count must be 0
+            preview = single_store.preview_session_purge("synthetic-dom-001")
+            self.assertEqual(preview.canonical_posts_to_delete_count, 0)
+            self.assertEqual(preview.observation_count, 1)
+
+            # Purge session: deleted_canonical_posts_count must be 0
+            purge_res = single_store.purge_session("synthetic-dom-001")
+            self.assertEqual(purge_res.deleted_canonical_posts_count, 0)
+            self.assertEqual(purge_res.deleted_observations_count, 1)
+
+            # Canonical post must remain in store
+            self.assertIsNotNone(single_store.get_canonical_post(retained_post_id))
+            # Session and observation are purged
+            self.assertIsNone(single_store.get_session("synthetic-dom-001"))
+
+    def test_two_session_shared_canonical_post_child_counts_idempotent(self) -> None:
+        dom_envelope = load_json(FIXTURES / "dom-session.json")
+        shared_obs = dom_envelope["observations"][2]
+
+        env_a = copy.deepcopy(dom_envelope)
+        env_a["session"]["session_id"] = "session-shared-a"
+        env_a["observations"] = [copy.deepcopy(shared_obs)]
+        env_a["observations"][0]["session_id"] = "session-shared-a"
+        env_a["content_digest"] = digest_without_field(env_a)
+
+        env_b = copy.deepcopy(dom_envelope)
+        env_b["session"]["session_id"] = "session-shared-b"
+        env_b["session"]["started_at"] = "2030-01-02T11:00:00Z"
+        env_b["session"]["ended_at"] = "2030-01-02T11:05:00Z"
+        env_b["observations"] = [copy.deepcopy(shared_obs)]
+        env_b["observations"][0]["session_id"] = "session-shared-b"
+        env_b["observations"][0]["observation_id"] = "obs-b-shared-001"
+        env_b["content_digest"] = digest_without_field(env_b)
+
+        # Import Session A
+        self.store.import_envelope(env_a)
+        posts_a = self.store.list_canonical_posts("session-shared-a")
+        self.assertEqual(len(posts_a), 1)
+        post_id = posts_a[0]["local_post_id"]
+        post_after_a = self.store.get_canonical_post(post_id)
+        self.assertIsNotNone(post_after_a)
+        author_count_a = len(post_after_a["authors"])
+        rel_count_a = len(post_after_a["relationships"])
+        media_count_a = len(post_after_a["media"])
+        unc_count_a = len(post_after_a["uncertainty"])
+        self.assertGreater(author_count_a, 0)
+
+        # Import Session B (shares the same canonical post)
+        self.store.import_envelope(env_b)
+        post_after_b = self.store.get_canonical_post(post_id)
+        self.assertIsNotNone(post_after_b)
+
+        # Child counts must remain strictly identical
+        self.assertEqual(len(post_after_b["authors"]), author_count_a)
+        self.assertEqual(len(post_after_b["relationships"]), rel_count_a)
+        self.assertEqual(len(post_after_b["media"]), media_count_a)
+        self.assertEqual(len(post_after_b["uncertainty"]), unc_count_a)
+        self.assertEqual(len(post_after_b["observation_ids"]), 2)
 
 
 if __name__ == "__main__":

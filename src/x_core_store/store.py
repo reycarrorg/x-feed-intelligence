@@ -18,14 +18,17 @@ from x_core_store.exceptions import (
     BACKUP_CAVEATS,
     PURGE_CAVEATS,
     PRAGMA_FAILURE,
+    PURGE_INCOMPLETE,
     REJECTED_SCHEMA,
     SESSION_ID_COLLISION,
     UNSUPPORTED_APPLICATION_ID,
     StoreError,
     ValidationError,
 )
-from x_core_store.migrations import apply_migrations
+from x_core_store.migrations import MIGRATIONS, apply_migrations
 from x_core_store.validator import EnvelopeValidator
+
+MAX_BACKUP_BYTES: int = 104857600  # 100 MiB maximum supported backup size
 
 
 @dataclass(frozen=True)
@@ -428,81 +431,117 @@ class CanonicalStore:
                         (post_id, obs_id),
                     )
 
+                cursor.execute(
+                    "SELECT local_author_id, role FROM canonical_post_authors WHERE local_post_id = ?;",
+                    (post_id,),
+                )
+                existing_authors = {(r[0], r[1]) for r in cursor.fetchall()}
+
                 for auth in post.get("authors", []):
-                    cursor.execute(
-                        """
-                        INSERT INTO canonical_post_authors (
-                            local_post_id, local_author_id, platform_author_id, display_name,
-                            handle, role, identity_confidence, uncertainty_codes_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-                        """,
-                        (
-                            post_id,
-                            auth["local_author_id"],
-                            auth.get("platform_author_id"),
-                            auth.get("display_name"),
-                            auth.get("handle"),
-                            auth["role"],
-                            auth["identity_confidence"],
-                            compact_bytes(auth.get("uncertainty_codes", [])).decode("utf-8"),
-                        ),
-                    )
+                    key_auth = (auth["local_author_id"], auth["role"])
+                    if key_auth not in existing_authors:
+                        existing_authors.add(key_auth)
+                        cursor.execute(
+                            """
+                            INSERT INTO canonical_post_authors (
+                                local_post_id, local_author_id, platform_author_id, display_name,
+                                handle, role, identity_confidence, uncertainty_codes_json
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                            """,
+                            (
+                                post_id,
+                                auth["local_author_id"],
+                                auth.get("platform_author_id"),
+                                auth.get("display_name"),
+                                auth.get("handle"),
+                                auth["role"],
+                                auth["identity_confidence"],
+                                compact_bytes(auth.get("uncertainty_codes", [])).decode("utf-8"),
+                            ),
+                        )
+
+                cursor.execute(
+                    "SELECT kind, source_local_post_id FROM canonical_post_relationships WHERE local_post_id = ?;",
+                    (post_id,),
+                )
+                existing_rels = {(r[0], r[1]) for r in cursor.fetchall()}
 
                 for rel in post.get("relationships", []):
-                    cursor.execute(
-                        """
-                        INSERT INTO canonical_post_relationships (
-                            local_post_id, kind, source_local_post_id, source_platform_post_id,
-                            confidence, provenance_ids_json
-                        ) VALUES (?, ?, ?, ?, ?, ?);
-                        """,
-                        (
-                            post_id,
-                            rel["kind"],
-                            rel["source_local_post_id"],
-                            rel.get("source_platform_post_id"),
-                            rel["confidence"],
-                            compact_bytes(rel.get("provenance_ids", [])).decode("utf-8"),
-                        ),
-                    )
+                    key_rel = (rel["kind"], rel["source_local_post_id"])
+                    if key_rel not in existing_rels:
+                        existing_rels.add(key_rel)
+                        cursor.execute(
+                            """
+                            INSERT INTO canonical_post_relationships (
+                                local_post_id, kind, source_local_post_id, source_platform_post_id,
+                                confidence, provenance_ids_json
+                            ) VALUES (?, ?, ?, ?, ?, ?);
+                            """,
+                            (
+                                post_id,
+                                rel["kind"],
+                                rel["source_local_post_id"],
+                                rel.get("source_platform_post_id"),
+                                rel["confidence"],
+                                compact_bytes(rel.get("provenance_ids", [])).decode("utf-8"),
+                            ),
+                        )
+
+                cursor.execute(
+                    "SELECT local_media_id FROM canonical_post_media WHERE local_post_id = ?;",
+                    (post_id,),
+                )
+                existing_media = {r[0] for r in cursor.fetchall()}
 
                 for med in post.get("media", []):
-                    cursor.execute(
-                        """
-                        INSERT INTO canonical_post_media (
-                            local_post_id, local_media_id, kind, alt_text, visible_description,
-                            perceptual_fingerprint, binary_collected, confidence, provenance_ids_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-                        """,
-                        (
-                            post_id,
-                            med["local_media_id"],
-                            med["kind"],
-                            med.get("alt_text"),
-                            med.get("visible_description"),
-                            med.get("perceptual_fingerprint"),
-                            0,
-                            med["confidence"],
-                            compact_bytes(med.get("provenance_ids", [])).decode("utf-8"),
-                        ),
-                    )
+                    key_med = med["local_media_id"]
+                    if key_med not in existing_media:
+                        existing_media.add(key_med)
+                        cursor.execute(
+                            """
+                            INSERT INTO canonical_post_media (
+                                local_post_id, local_media_id, kind, alt_text, visible_description,
+                                perceptual_fingerprint, binary_collected, confidence, provenance_ids_json
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                            """,
+                            (
+                                post_id,
+                                med["local_media_id"],
+                                med["kind"],
+                                med.get("alt_text"),
+                                med.get("visible_description"),
+                                med.get("perceptual_fingerprint"),
+                                0,
+                                med["confidence"],
+                                compact_bytes(med.get("provenance_ids", [])).decode("utf-8"),
+                            ),
+                        )
+
+                cursor.execute(
+                    "SELECT code, field FROM canonical_post_uncertainties WHERE local_post_id = ?;",
+                    (post_id,),
+                )
+                existing_unc = {(r[0], r[1]) for r in cursor.fetchall()}
 
                 for unc in post.get("uncertainty", []):
-                    cursor.execute(
-                        """
-                        INSERT INTO canonical_post_uncertainties (
-                            local_post_id, code, field, severity, requires_review, safe_detail
-                        ) VALUES (?, ?, ?, ?, ?, ?);
-                        """,
-                        (
-                            post_id,
-                            unc["code"],
-                            unc["field"],
-                            unc["severity"],
-                            1 if unc.get("requires_review", False) else 0,
-                            unc.get("safe_detail"),
-                        ),
-                    )
+                    key_unc = (unc["code"], unc["field"])
+                    if key_unc not in existing_unc:
+                        existing_unc.add(key_unc)
+                        cursor.execute(
+                            """
+                            INSERT INTO canonical_post_uncertainties (
+                                local_post_id, code, field, severity, requires_review, safe_detail
+                            ) VALUES (?, ?, ?, ?, ?, ?);
+                            """,
+                            (
+                                post_id,
+                                unc["code"],
+                                unc["field"],
+                                unc["severity"],
+                                1 if unc.get("requires_review", False) else 0,
+                                unc.get("safe_detail"),
+                            ),
+                        )
 
             cursor.execute("COMMIT;")
         except Exception:
@@ -677,6 +716,13 @@ class CanonicalStore:
         if not target.is_file():
             raise StoreError("BACKUP_ERROR", "Backup file does not exist")
 
+        file_size = target.stat().st_size
+        if file_size == 0 or file_size > MAX_BACKUP_BYTES:
+            raise StoreError(
+                "BACKUP_ERROR",
+                "Backup file size is invalid or exceeds maximum allowed boundary",
+            )
+
         backup_conn = sqlite3.connect(str(target))
         try:
             b_cursor = backup_conn.cursor()
@@ -686,6 +732,17 @@ class CanonicalStore:
             b_cursor.execute("PRAGMA application_id;")
             if b_cursor.fetchone()[0] != APPLICATION_ID:
                 raise StoreError("BACKUP_ERROR", "Backup application ID mismatch")
+
+            # Verify schema version matches current/latest supported migration version
+            b_cursor.execute("PRAGMA user_version;")
+            ver_row = b_cursor.fetchone()
+            backup_version = ver_row[0] if ver_row else 0
+            latest_version = max(m["version"] for m in MIGRATIONS)
+            if backup_version != latest_version:
+                raise StoreError(
+                    "BACKUP_ERROR",
+                    "Unsupported backup schema version",
+                )
 
             # Restore into current database
             backup_conn.backup(self.connection)
@@ -771,7 +828,7 @@ class CanonicalStore:
         )
         linked_post_ids = {row[0] for row in cursor.fetchall()}
 
-        # Check which of these have observations from OTHER sessions
+        # Check which of these have observations from OTHER sessions or are retained by recommendations
         posts_to_delete = 0
         shared_posts = 0
         for post_id in linked_post_ids:
@@ -784,7 +841,17 @@ class CanonicalStore:
                 (post_id, session_id),
             )
             other_obs_count = cursor.fetchone()[0]
-            if other_obs_count == 0:
+
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM analysis_recommendations
+                WHERE target_type = 'post' AND target_local_id = ?;
+                """,
+                (post_id,),
+            )
+            recs_count = cursor.fetchone()[0]
+
+            if other_obs_count == 0 and recs_count == 0:
                 posts_to_delete += 1
             else:
                 shared_posts += 1
@@ -814,6 +881,7 @@ class CanonicalStore:
 
             # Delete observations belonging to session (cascades to observation authors/media/provenance/uncertainties/cpo)
             cursor.execute("DELETE FROM observations WHERE session_id = ?;", (session_id,))
+            deleted_observations_count = cursor.rowcount
 
             # Delete session row (cascades to collection events)
             cursor.execute("DELETE FROM sessions WHERE session_id = ?;", (session_id,))
@@ -828,6 +896,7 @@ class CanonicalStore:
                   );
                 """
             )
+            deleted_canonical_posts_count = cursor.rowcount
 
             cursor.execute("COMMIT;")
         except Exception:
@@ -838,6 +907,11 @@ class CanonicalStore:
         cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
         wal_status = cursor.fetchone()
         wal_checkpoint_status = (wal_status[0], wal_status[1], wal_status[2]) if wal_status else (0, 0, 0)
+        if wal_checkpoint_status[0] != 0:
+            raise StoreError(
+                PURGE_INCOMPLETE,
+                "WAL checkpoint could not complete (busy lock); close active readers and retry purge",
+            )
 
         vacuum_status = "VACUUM_NOT_RUN"
         if run_vacuum and self.db_path.is_file():
@@ -863,8 +937,8 @@ class CanonicalStore:
         return PurgeResult(
             status="COMPLETED",
             session_id=session_id,
-            deleted_observations_count=preview.observation_count,
-            deleted_canonical_posts_count=preview.canonical_posts_to_delete_count,
+            deleted_observations_count=max(deleted_observations_count, 0),
+            deleted_canonical_posts_count=max(deleted_canonical_posts_count, 0),
             wal_checkpoint_status=wal_checkpoint_status,
             vacuum_status=vacuum_status,
             caveats=PURGE_CAVEATS,

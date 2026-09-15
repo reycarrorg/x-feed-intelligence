@@ -47,7 +47,7 @@ Never copy a live `.sqlite`, `-wal`, or `-shm` file as a backup. Create consiste
 
 Purging the live database does not alter older backups. The product maintains a local backup inventory only for backups it created and clearly lists those paths during purge. It cannot discover every Time Machine snapshot, filesystem snapshot, manually copied database, cloud-provider version, or previously shared export.
 
-Restoring a backup is a separate explicit action. Restore must validate the application ID, schema version, integrity, size, and destination; it must never accept an arbitrary database as a shortcut around import validation.
+Restoring a backup is a separate explicit action. Restore must validate the application ID, supported schema version matching current migrations, integrity, finite backup size (maximum 104,857,600 bytes / 100 MiB), and destination; it must never accept an arbitrary database as a shortcut around import validation.
 
 ## Export behavior
 
