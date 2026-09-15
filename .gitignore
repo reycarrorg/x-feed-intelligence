@@ -19,6 +19,7 @@ dist/
 build/
 coverage/
 node_modules/
+extension/.output/
+extension/.wxt/
 .venv/
 __pycache__/
-

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>X Feed Intelligence</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">LOCAL · MANUAL SCROLL</p>
+          <h1>X Feed Intelligence</h1>
+        </div>
+        <span id="state" class="state">INACTIVE</span>
+      </header>
+
+      <p id="message" class="message" role="status" aria-live="polite">Open x.com to begin.</p>
+
+      <section class="counts" aria-label="Collection counts">
+        <div><strong id="total">0</strong><span>visible cards</span></div>
+        <div><strong id="organic">0</strong><span>organic</span></div>
+        <div><strong id="promoted">0</strong><span>promoted</span></div>
+        <div><strong id="ambiguous">0</strong><span>review</span></div>
+      </section>
+
+      <section class="controls" aria-label="Collection controls">
+        <button id="arm" class="primary">Grant X access</button>
+        <button id="start" class="primary" disabled>Start visible capture</button>
+        <button id="stop" disabled>Stop</button>
+        <button id="export" disabled>Export private JSON</button>
+        <button id="discard" class="danger" disabled>Discard session</button>
+        <button id="revoke" class="quiet" disabled>Revoke X access</button>
+      </section>
+
+      <aside>
+        <strong>No automatic scrolling.</strong> XFI records only top-level cards that become at least 50% visible while you scroll normally. It never likes, follows, clicks, opens links, reads cookies, or calls X APIs.
+      </aside>
+
+      <details>
+        <summary>Safety boundaries</summary>
+        <ul>
+          <li>Captured posts are untrusted data.</li>
+          <li>Maximum 100 visible cards or 15 minutes.</li>
+          <li>Collection pauses while the tab is hidden.</li>
+          <li>Login, challenge, rate-limit, and prompt-injection surfaces stop the session.</li>
+          <li>The export stays local until you explicitly move or upload it.</li>
+        </ul>
+      </details>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

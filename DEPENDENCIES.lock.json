@@ -1,8 +1,52 @@
 {
   "lock_format": "xfi-dependency-lock-v1",
-  "reviewed_on": "2026-09-13",
+  "reviewed_on": "2026-09-15",
   "package_manager": "pnpm 11.19.0 (test dependency lock only; lifecycle scripts disabled)",
   "product_dependencies": [],
+  "extension_dependencies": [
+    {
+      "name": "WXT",
+      "version": "0.21.4",
+      "registry_integrity": "sha512-iyVMTXb37BQAbsPHCuPzrK3ZxnO9pZmvbKl7VJWIHe3RG40On2NyP2FOjArtOITO96plEYnh3o+iUlRp9qE90w==",
+      "license": "MIT",
+      "scope": "Extension build framework; development dependency; generated runtime uses browser APIs and no WXT-hosted service",
+      "lifecycle": "Installed with lifecycle scripts disabled; exact direct and transitive artifacts are pinned in extension/pnpm-lock.yaml",
+      "network": "Package registry access during reviewed installation and CI only; no WXT network service in the extension runtime",
+      "decision": "allow exact version for Gate 3 build"
+    },
+    {
+      "name": "TypeScript",
+      "version": "7.0.2",
+      "registry_integrity": "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==",
+      "license": "Apache-2.0",
+      "scope": "Compile-time only",
+      "decision": "allow exact version for Gate 3 compilation"
+    },
+    {
+      "name": "@types/chrome",
+      "version": "0.1.32",
+      "registry_integrity": "sha512-n5Cqlh7zyAqRLQWLXkeV5K/1BgDZdVcO/dJSTa8x+7w+sx7m73UrDmduAptg4KorMtyTW2TNnPu8RGeaDMKNGg==",
+      "license": "MIT",
+      "scope": "Compile-time browser API types only",
+      "decision": "allow exact version for Gate 3 compilation"
+    },
+    {
+      "name": "Vitest",
+      "version": "5.0.0",
+      "registry_integrity": "sha512-gpsMNoRhMjMktVxPtstOH4/PJuPyovVaMDr4oDilXaGH1EcqM2OE96SoHT2VIQ6fTGtTjqmHDrEu2X9RQiXf8Q==",
+      "license": "MIT",
+      "scope": "Extension unit tests only; excluded from generated extension",
+      "decision": "allow exact version for Gate 3 tests"
+    },
+    {
+      "name": "Happy DOM",
+      "version": "20.8.9",
+      "registry_integrity": "sha512-Tz23LR9T9jOGVZm2x1EPdXqwA37G/owYMxRwU0E4miurAtFsPMQ1d2Jc2okUaSjZqAFz2oEn3FLXC5a0a+siyA==",
+      "license": "MIT",
+      "scope": "Extension DOM tests only; excluded from generated extension",
+      "decision": "allow exact version for Gate 3 tests"
+    }
+  ],
   "test_dependencies": [
     {
       "name": "playwright-core",
@@ -67,6 +111,20 @@
       "maintenance": "Official repository active and unarchived; v7.0.1 published 2026-07-20",
       "advisory_review": "Official repository security-advisory list returned zero entries on 2026-09-12; absence is not proof of safety",
       "decision": "allow CI-only at immutable revision; never package in the product"
+    },
+    {
+      "name": "actions/setup-node",
+      "owner": "GitHub",
+      "source": "https://github.com/actions/setup-node",
+      "version": "v7.0.0",
+      "revision": "820762786026740c76f36085b0efc47a31fe5020",
+      "license": "MIT",
+      "scope": "CI Node.js 24.19.0 setup for extension compile, tests, and build only",
+      "lifecycle": "GitHub-hosted Node 24 action; immutable action revision and exact requested Node.js version",
+      "network": "Downloads or resolves the exact Node.js toolchain through GitHub-hosted action infrastructure",
+      "telemetry": "No product telemetry; GitHub Actions platform logging remains",
+      "permissions": "Workflow contents:read; no persisted repository credentials",
+      "decision": "allow CI-only at immutable revision; never package in the extension"
     }
   ],
   "platform_requirements": [

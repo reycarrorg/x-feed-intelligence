@@ -22,7 +22,7 @@ def changed_files() -> list[Path]:
 def main() -> int:
     errors: list[str] = []
     files = changed_files()
-    source_prefixes = (".github/", "src/", "native/", "harness/", "scripts/", "tests/")
+    source_prefixes = (".github/", "src/", "native/", "harness/", "extension/", "scripts/", "tests/")
     source_names = {"DEPENDENCIES.lock.json", "THIRD_PARTY_NOTICES.md", "sbom/cyclonedx.cdx.json", "package.json", "pnpm-lock.yaml", ".npmrc"}
     covered = [path for path in files if path.relative_to(ROOT).as_posix().startswith(source_prefixes) or path.relative_to(ROOT).as_posix() in source_names]
     if not covered:
@@ -39,7 +39,7 @@ def main() -> int:
         if path.suffix.lower() in {".mov", ".mp4", ".sqlite", ".db", ".pem", ".key", ".har"}:
             errors.append(f"private/binary artifact in review scope: {relative}")
             continue
-        if path.suffix.lower() not in {".py", ".swift", ".js", ".sh", ".json", ".yml", ".yaml", ".md", ".html"}:
+        if path.suffix.lower() not in {".py", ".swift", ".js", ".ts", ".css", ".sh", ".json", ".yml", ".yaml", ".md", ".html"}:
             continue
         text = path.read_text(encoding="utf-8")
         if local_path.search(text):
@@ -62,8 +62,9 @@ def main() -> int:
     if lock["test_dependencies"][0].get("sha256") != "208593d4e1bcd8f8fe5f869cad1cc332dc7f1d70dc1d58c102dc3ac36e30f26c" or lock["test_dependencies"][1].get("archive_sha256") != "1f701ef60757c63c6ccf98afaf28291dd0c8d1457d3d738e81fd62201c230ad0":
         errors.append("test dependency artifact integrity drift")
     revision = lock["ci_dependencies"][0]["revision"]
+    setup_revision = lock["ci_dependencies"][1]["revision"]
     workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-    if workflow.count("actions/checkout@" + revision) != 2 or "persist-credentials: false" not in workflow:
+    if workflow.count("actions/checkout@" + revision) != 3 or workflow.count("actions/setup-node@" + setup_revision) != 1 or workflow.count("persist-credentials: false") != 3:
         errors.append("CI lock/revision or credential persistence drift")
     if errors:
         for error in errors: print("SECURITY REVIEW ERROR: " + error, file=sys.stderr)

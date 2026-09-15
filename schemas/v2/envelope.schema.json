@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.x-feed-intelligence.invalid/v2/envelope.schema.json",
+  "title": "Explicit live-DOM import envelope v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session", "observations", "collection_events", "content_digest"],
+  "properties": {
+    "schema_version": {"const": "2.0.0"},
+    "session": {"$ref": "session.schema.json"},
+    "observations": {"type": "array", "maxItems": 100, "items": {"$ref": "observation.schema.json"}},
+    "collection_events": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_code", "at", "safe_detail_code"],
+        "properties": {
+          "event_code": {"type": "string", "enum": ["SESSION_STARTED", "OBSERVATION_ACCEPTED", "OBSERVATION_UPDATED", "PAUSED_DOCUMENT_HIDDEN", "STOPPED_USER", "LOGIN_SURFACE", "SIGN_OUT_STATE", "ACCOUNT_LOCK", "CAPTCHA_OR_TURNSTILE", "VERIFICATION_CHALLENGE", "UNUSUAL_ACTIVITY", "CONSENT_SURFACE", "RATE_LIMIT", "WRONG_ORIGIN", "IFRAME_BOUNDARY", "PERMISSION_DRIFT", "PARSER_VERSION_MISMATCH", "UNKNOWN_TOPOLOGY", "AMBIGUITY_LIMIT", "QUEUE_LIMIT", "DURATION_LIMIT", "PACKET_LIMIT", "DISK_OR_MEMORY_LIMIT", "RETENTION_FAILURE", "SCHEMA_MISMATCH", "EXCLUDED_PERMISSION_REQUEST", "ACCOUNT_ACTION_REQUEST", "INJECTION_CONTENT"]},
+          "at": {"type": "string", "format": "date-time"},
+          "safe_detail_code": {"type": ["string", "null"], "maxLength": 64}
+        }
+      }
+    },
+    "content_digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  }
+}

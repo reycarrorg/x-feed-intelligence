@@ -27,3 +27,31 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - run: bash tests/check_repo.sh
+
+  extension-gate3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.19.0 --activate
+      - name: Install reviewed extension dependencies without lifecycle scripts
+        working-directory: extension
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Compile, test, and build the review extension
+        working-directory: extension
+        run: |
+          pnpm run prepare:wxt
+          pnpm run compile
+          pnpm run test
+          pnpm run build
+      - name: Verify generated manifest and prohibited capabilities
+        run: python3 tests/check_gate3_manifest.py

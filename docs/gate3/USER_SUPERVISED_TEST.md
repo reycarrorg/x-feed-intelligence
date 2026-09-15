@@ -1,0 +1,32 @@
+# User-Supervised Live Acceptance Protocol
+
+This protocol is a future test plan. It does not authorize installation, account access, or publication by itself.
+
+## Preconditions
+
+1. Recheck current X terms, browser-extension policy, and account-enforcement risk from primary sources.
+2. Review the exact commit, dependency lock, generated manifest, build output, and third-party notices.
+3. Confirm the manifest has only `optional_host_permissions: ["https://x.com/*"]`, with no always-on host permission, background worker, or other permissions.
+4. Use a dedicated ordinary browser profile. The user performs login, MFA, consent, CAPTCHA, and recovery personally; credentials are never supplied to the extension or recorded in the repository.
+5. Prepare a simultaneous user-controlled screen recording if one-to-one recall measurement is desired.
+
+## One bounded session
+
+1. Load the exact reviewed unpacked build.
+2. Open an ordinary `https://x.com` feed page and grant the exact optional site permission.
+3. Reload once if the browser requires it. Confirm the collector says ARMED and has collected zero posts.
+4. Press Start. Scroll manually at an ordinary reading pace. Do not use automatic scrolling or another automation tool.
+5. Stop after at most 100 visible candidate cards or 15 minutes. Stop immediately on login, challenge, unusual-activity, rate-limit, permission drift, unexpected surface, or account warning.
+6. Export the private JSON once, validate it locally, and compare it with the screen recording if captured.
+7. Revoke X access and remove the unpacked extension after the test unless the user explicitly chooses to retain the reviewed build.
+
+## Pass conditions
+
+- No automatic scroll, click, hover, playback, expansion, navigation, retry, link opening, download, network request, request interception, or account action occurs.
+- Only cards that were at least 50% visible while the document was visible are accepted.
+- Promotion separation and hard-stop behavior have no known false negatives in the reviewed sample.
+- DOM precision is at least 0.99 and recall at least 0.98 against the user-controlled recording.
+- The exported packet validates, imports idempotently, and produces only non-performed recommendations.
+- No credential, cookie, token, direct-message, notification, or unrelated private field appears in the export.
+
+Any prerequisite or pass-condition failure ends the test. It does not authorize retries using broadened access, alternate accounts, private interfaces, proxies, stealth, or automation.

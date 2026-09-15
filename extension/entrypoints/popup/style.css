@@ -1,0 +1,34 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #090d14;
+  color: #edf3ff;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; width: 390px; min-height: 520px; background: radial-gradient(circle at 100% 0, #162646 0, #090d14 42%); }
+main { padding: 20px; }
+header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.eyebrow { margin: 0 0 5px; color: #7dd3fc; font: 700 10px/1.2 ui-monospace, monospace; letter-spacing: .12em; }
+h1 { margin: 0; font-size: 21px; letter-spacing: -.02em; }
+.state { border: 1px solid #475569; border-radius: 999px; padding: 6px 8px; color: #cbd5e1; font: 700 10px/1 ui-monospace, monospace; }
+.state.capturing { color: #a7f3d0; border-color: #059669; background: #064e3b66; }
+.state.error { color: #fecaca; border-color: #dc2626; background: #7f1d1d66; }
+.message { min-height: 38px; margin: 18px 0 12px; color: #bac7db; font-size: 13px; line-height: 1.45; }
+.counts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.counts div { padding: 11px 12px; border: 1px solid #263247; border-radius: 10px; background: #111827cc; }
+.counts strong { display: block; font-size: 20px; }
+.counts span { display: block; color: #94a3b8; font-size: 11px; margin-top: 2px; }
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button { min-height: 39px; border: 1px solid #3b4b65; border-radius: 9px; background: #172033; color: #e5edf9; font: 650 12px/1.2 inherit; cursor: pointer; }
+button:hover:not(:disabled) { border-color: #7dd3fc; }
+button:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+button:disabled { opacity: .42; cursor: default; }
+button.primary { background: #0369a1; border-color: #0ea5e9; }
+button.danger { color: #fecaca; border-color: #7f1d1d; }
+button.quiet { background: transparent; color: #94a3b8; }
+aside { margin-top: 14px; padding: 12px; border-left: 3px solid #0ea5e9; background: #0c1728; color: #b8c5d9; font-size: 12px; line-height: 1.5; }
+aside strong { color: #edf3ff; }
+details { margin-top: 14px; color: #9cabc0; font-size: 12px; }
+summary { cursor: pointer; color: #cbd5e1; }
+ul { padding-left: 20px; line-height: 1.5; }

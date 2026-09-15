@@ -14,6 +14,7 @@ from .errors import ValidationError
 
 MAX_PACKET_BYTES = 5_242_880
 MAX_DEPTH = 64
+SUPPORTED_SCHEMA_VERSIONS = {"1.0.0": "v1", "2.0.0": "v2"}
 SENSITIVE_KEYS = re.compile(r"(?i)(authorization|auth[_-]?token|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|bearer|cookie|csrf|password|session[_-]?(?:token|storage)|local[_-]?storage|browser[_-]?profile|direct[_-]?messages?|notifications?|payment|har)")
 SECRET_VALUES = re.compile(r"(?i)(?:bearer\s+[a-z0-9._-]{12,}|-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----)")
 
@@ -194,9 +195,15 @@ def load_and_validate_envelope(raw: bytes, schema_root: Path) -> dict:
         raise ValidationError(privacy)
     if not isinstance(value, dict) or "schema_version" not in value:
         raise ValidationError("REJECTED_SCHEMA")
-    if value["schema_version"] != "1.0.0":
+    version = value["schema_version"]
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValidationError("REJECTED_VERSION")
-    SchemaValidator(schema_root).validate_file(value, "envelope.schema.json")
+    version_directory = SUPPORTED_SCHEMA_VERSIONS[version]
+    if schema_root.name in set(SUPPORTED_SCHEMA_VERSIONS.values()):
+        selected_root = schema_root.parent / version_directory
+    else:
+        selected_root = schema_root / version_directory
+    SchemaValidator(selected_root).validate_file(value, "envelope.schema.json")
     relationship_target_ids(value["observations"])
     if value["content_digest"] != digest(value):
         raise ValidationError("REJECTED_DIGEST")

@@ -1,12 +1,22 @@
 # Third-Party Notices
 
-No third-party package is adopted or distributed in the Gate 1 or Gate 2 product. The test-only browser stack documented below is adopted solely for local verification and never enters the product package. No third-party source file, binary, model, font, icon, codec, browser, or test framework enters that package.
+No third-party package is adopted or distributed in the Gate 1 or Gate 2 recording-only package. Gate 3 adds the separately gated extension reuse and build dependencies documented below. The test-only browser stack remains solely for local verification and never enters the recording-only package.
 
-The executable product and most tests use the Python standard library, platform SQLite, and Apple SDK frameworks. Environment-provided tools and platform SDKs are not redistributed. WXT remains unadopted. Playwright Core and one exact Chrome-for-Testing archive are test-only; FFmpeg and the Chromium headless shell were not downloaded or executed.
+The recording product and most tests use the Python standard library, platform SQLite, and Apple SDK frameworks. Environment-provided tools and platform SDKs are not redistributed. Playwright Core and one exact Chrome-for-Testing archive are test-only; FFmpeg and the Chromium headless shell were not downloaded or executed.
+
+## Gate 3 extension reuse
+
+Selected visible-DOM selector, author, timestamp, status-ID, and quoted-card parsing methods in `extension/lib/parser.ts` are adapted from XClipper 2.8.2 at commit `3f7c6caa2e6f02bf37d140b989cbbdf4485275a5`, by Ali Zendegani, under the PolyForm Noncommercial License 1.0.0. Required Notice: Copyright © 2026 Ali Zendegani (<https://github.com/zendegani/XClipper>). Fast/Auto/Super modes, automatic navigation, private GraphQL interfaces, request/header interception, media downloads, and account actions are not adopted.
+
+WXT 0.21.4, copyright its contributors and licensed under MIT, is used as the extension build framework. It is a development dependency and no WXT-hosted service is used at runtime. Exact direct and transitive artifacts are pinned in `extension/pnpm-lock.yaml`. TypeScript and `@types/chrome` are compile-time dependencies; Vitest and Happy DOM are test-only. Their inclusion in the dependency graph is not permission to import unrelated capabilities into the product.
+
+Feed Cleaner and XRAI informed user-visible explanation and local-analysis concepts only. No source from either project is copied into Gate 3. The inspected Feed Cleaner revision lacked a complete root license file, so its package-metadata license declaration was not treated as sufficient for source reuse.
 
 ## CI-only dependency
 
 `actions/checkout` v7.0.1 at immutable revision `3d3c42e5aac5ba805825da76410c181273ba90b1` is used only on GitHub-hosted CI to fetch this repository with `contents: read`, `persist-credentials: false`, and full history for base-to-head review. It is copyright GitHub, Inc. and contributors and licensed under the MIT License. Upstream source and license: <https://github.com/actions/checkout> and <https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE>. It is not included in the private package candidate.
+
+`actions/setup-node` v7.0.0 at immutable revision `820762786026740c76f36085b0efc47a31fe5020` is used only on GitHub-hosted CI to provide Node.js 24.19.0 for extension compilation, tests, and packaging. It is copyright GitHub, Inc. and contributors and licensed under the MIT License. Upstream source and license: <https://github.com/actions/setup-node> and <https://github.com/actions/setup-node/blob/820762786026740c76f36085b0efc47a31fe5020/LICENSE>. It is not included in the generated extension.
 
 Exact scope, network behavior, maintenance, advisory review, and the conditional allow decision are recorded in [`DEPENDENCIES.lock.json`](DEPENDENCIES.lock.json). Candidate components remain governed by [the dependency and SBOM plan](docs/gate1/DEPENDENCY_AND_SBOM_PLAN.md).
 
