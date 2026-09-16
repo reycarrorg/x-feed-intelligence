@@ -18,18 +18,10 @@ const elements = {
   revoke: document.querySelector<HTMLButtonElement>('#revoke')!,
 };
 
-let activeTab: { id: number; url: string } | null = null;
+let activeTab: { id: number } | null = null;
+let confirmedXTab = false;
 let permissionGranted = false;
 let latestStatus: CollectorStatus | null = null;
-
-function isXUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' && parsed.hostname === 'x.com';
-  } catch {
-    return false;
-  }
-}
 
 function setMessage(value: string): void {
   elements.message.textContent = value;
@@ -48,10 +40,9 @@ function render(status: CollectorStatus): void {
   elements.promoted.textContent = String(status.promotedCount);
   elements.ambiguous.textContent = String(status.ambiguousCount);
 
-  const active = isXUrl(activeTab?.url || '');
   elements.arm.hidden = permissionGranted;
-  elements.arm.disabled = !active;
-  elements.start.disabled = !active || !permissionGranted || !['ARMED', 'STOPPED'].includes(status.state);
+  elements.arm.disabled = !activeTab;
+  elements.start.disabled = !confirmedXTab || !permissionGranted || !['ARMED', 'STOPPED'].includes(status.state);
   elements.stop.disabled = status.state !== 'CAPTURING' && status.state !== 'PAUSED_HIDDEN';
   elements.export.disabled = status.observationCount === 0;
   elements.discard.disabled = status.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(status.state);
@@ -68,27 +59,33 @@ async function send(command: CollectorCommand): Promise<CollectorResponse> {
 }
 
 async function refresh(): Promise<void> {
-  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  // Brave can expose an extension popup as the current window. Resolve the last
+  // focused normal browser window so the popup never selects itself as the tab.
+  const window = await browser.windows.getLastFocused({ windowTypes: ['normal'] });
+  const tabs = window.id == null ? [] : await browser.tabs.query({ active: true, windowId: window.id });
   const tab = tabs[0];
-  activeTab = tab?.id != null && tab.url ? { id: tab.id, url: tab.url } : null;
+  activeTab = tab?.id != null ? { id: tab.id } : null;
+  confirmedXTab = false;
   permissionGranted = await browser.permissions.contains({ origins: [EXACT_PATTERN] });
-  if (!isXUrl(activeTab?.url || '')) {
+  if (!activeTab) {
     render(emptyStatus());
     setMessage('Open an https://x.com tab to use the collector.');
     return;
   }
   if (!permissionGranted) {
     render(emptyStatus('INACTIVE'));
-    setMessage('Access is off. Granting access does not start collection.');
+    setMessage('X access is off. Granting it does not start collection; then open or reload an X tab.');
     return;
   }
   try {
     const response = await send({ type: 'XFI_STATUS' });
+    if (!response.ok || !response.status) throw new Error('COLLECTOR_NOT_LOADED');
+    confirmedXTab = true;
     render(response.status);
     setMessage(response.status.hardStopCode ? `Stopped safely: ${response.status.hardStopCode}` : response.status.state === 'CAPTURING' ? 'Capturing visible cards while you scroll normally.' : 'Ready. Collection starts only when you press Start.');
   } catch {
-    render(emptyStatus('ARMED'));
-    setMessage('Access is granted. Reload this X tab once, then reopen XFI.');
+    render(emptyStatus('INACTIVE'));
+    setMessage('No X collector is loaded in the active tab. Open or reload https://x.com, then reopen XFI.');
   }
 }
 

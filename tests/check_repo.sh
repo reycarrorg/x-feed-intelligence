@@ -44,7 +44,7 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   extension/lib/contracts.ts extension/lib/parser.ts extension/lib/classifier.ts \
   extension/entrypoints/collector.content.ts extension/entrypoints/popup/index.html \
   extension/entrypoints/popup/main.ts extension/entrypoints/popup/style.css extension/UPSTREAM_NOTICES.md \
-  extension/tests/parser.test.ts extension/tests/classifier.test.ts; do
+  extension/tests/parser.test.ts extension/tests/classifier.test.ts extension/tests/popup.test.ts extension/tests/messaging.test.ts; do
   test -s "$repo_root/$path" || { echo "missing or empty: $path" >&2; exit 1; }
 done
 

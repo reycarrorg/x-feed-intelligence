@@ -1,6 +1,6 @@
 # User-Supervised Live Acceptance Protocol
 
-This protocol is a future test plan. It does not authorize installation, account access, or publication by itself.
+This protocol defines full acceptance; the [September 16 limited Brave smoke test](BRAVE_SMOKE_TEST_2026-09-16.md) did not complete every condition. This document does not authorize installation, account access, or publication by itself.
 
 ## Preconditions
 

@@ -4,14 +4,14 @@ X Feed Intelligence is a local-first project for turning user-supplied X/Twitter
 
 ## Status
 
-**Research Gates 0–2 are merged. A Gate 3 hybrid review extension is implemented on an unmerged private branch and has only synthetic, static, compile, and package evidence.** Gate 2 provides a recording-first CLI, strict normalized analysis core, product-owned SQLite store, Apple Vision recording helper, non-distributable reserved-origin harness, deterministic synthetic evidence, and a reproducible recording-only private package. Gate 3 adds a reviewable Manifest V3 extension that can collect visible top-level cards only after the user grants the exact `https://x.com/*` permission and presses Start.
+**Research Gates 0–2 are merged. A Gate 3 hybrid review extension is implemented on an unmerged private branch.** Gate 2 provides a recording-first CLI, strict normalized analysis core, product-owned SQLite store, Apple Vision recording helper, non-distributable reserved-origin harness, deterministic synthetic evidence, and a reproducible recording-only private package. Gate 3 adds a reviewable Manifest V3 extension that can collect visible top-level cards only after the user grants the exact `https://x.com/*` permission and presses Start. A limited, user-authorized Brave smoke test of the review build passed on September 16, 2026; [the evidence and remaining gates are recorded here](docs/gate3/BRAVE_SMOKE_TEST_2026-09-16.md).
 
 The accepted Gate 0 architecture is a local hybrid with two independent inputs and one normalized analysis core:
 
 1. screen recordings supplied by the user; and
 2. a conditional passive browser-extension collector that observes visible posts only while the user browses an explicitly approved X origin.
 
-The recording path remains the lower-account-risk default. The Gate 3 extension uses a dedicated live-DOM v2 schema, manual scrolling, explicit start/stop/export controls, a 100-card/15-minute bound, hidden-tab pause, and hard stops. It has no automatic scrolling, X API access, network interception, background service worker, cookie access, link opening, media download, or account-action capability. It is not installed, signed, published, or live-tested. A later authenticated X test remains an explicit, user-supervised acceptance step; passive extraction may still violate X's Terms and could lead to account enforcement.
+The recording path remains the lower-account-risk default. The Gate 3 extension uses a dedicated live-DOM v2 schema, manual scrolling, explicit start/stop/export controls, a 100-card/15-minute bound, hidden-tab pause, and hard stops. It has no automatic scrolling, X API access, network interception, background service worker, cookie access, link opening, media download, or account-action capability. The review build was locally installed and smoke-tested, but is not signed or published; full authenticated-X acceptance, measurement against a reference recording, and account-safety assessment remain incomplete. Passive extraction may still violate X's Terms and could lead to account enforcement.
 
 The product will classify organic posts, exclude advertisements from the normal count, flag manipulation and prompt injection, identify high-signal information and opportunities, verify consequential claims against primary sources, and recommend accounts worth considering for a follow. It will not automatically like, follow, repost, reply, message, or schedule account activity.
 
@@ -46,6 +46,7 @@ Authenticated X testing requires the user. CAPTCHA, login challenges, rate limit
 - [Gate 3 hybrid implementation](docs/gate3/README.md)
 - [Gate 3 upstream reuse and license provenance](docs/gate3/UPSTREAM_REUSE.md)
 - [Gate 3 user-supervised test protocol](docs/gate3/USER_SUPERVISED_TEST.md)
+- [Gate 3 limited Brave smoke-test record](docs/gate3/BRAVE_SMOKE_TEST_2026-09-16.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Security policy](SECURITY.md)
 

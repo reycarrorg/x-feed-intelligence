@@ -424,15 +424,17 @@ export default defineContentScript({
   noScriptStartedPostMessage: true,
   main() {
     const collector = new LiveCollector();
-    browser.runtime.onMessage.addListener((message: unknown, sender) => {
+    browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
       if (sender.id !== browser.runtime.id || !message || typeof message !== 'object' || !('type' in message)) return undefined;
       const command = message as CollectorCommand;
       switch (command.type) {
-        case 'XFI_STATUS': return collector.messageStatus();
-        case 'XFI_START': return collector.start();
-        case 'XFI_STOP': return collector.stop();
-        case 'XFI_EXPORT': return collector.exportPacket();
-        case 'XFI_DISCARD': return collector.discard();
+        case 'XFI_STATUS': sendResponse(collector.messageStatus()); return undefined;
+        case 'XFI_START': sendResponse(collector.start()); return undefined;
+        case 'XFI_STOP': sendResponse(collector.stop()); return undefined;
+        case 'XFI_EXPORT':
+          void collector.exportPacket().then(sendResponse, () => sendResponse({ ok: false, status: collector.status(), error: 'EXPORT_FAILED' }));
+          return true;
+        case 'XFI_DISCARD': sendResponse(collector.discard()); return undefined;
         default: return undefined;
       }
     });
