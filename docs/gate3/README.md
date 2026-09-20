@@ -4,7 +4,7 @@
 
 The branch implements a Chrome/Chromium Manifest V3 review extension and a live-DOM v2 packet contract. It is source-reviewed, compiled, unit-tested, built, and checked against the existing local analysis core. The generated manifest is also inspected deterministically. This does **not** prove compatibility with current authenticated X markup, extension-store acceptance, long-session reliability, or account safety.
 
-The review build was locally installed in Brave and passed one bounded authenticated-X smoke test on September 16, 2026. See the [test record](BRAVE_SMOKE_TEST_2026-09-16.md). It remains unsigned and unpublished. This smoke test does not establish the full user-supervised acceptance conditions, current-X classification accuracy, long-session reliability, or account safety.
+The review build was locally installed in Brave and passed one bounded authenticated-X smoke test on September 16, 2026. See the [test record](BRAVE_SMOKE_TEST_2026-09-16.md). A separate temporary Windows Firefox build is described in [FIREFOX_WINDOWS.md](FIREFOX_WINDOWS.md); it has not run an authenticated-X acceptance session. The extension remains unsigned and store-unpublished. These checks do not establish the full user-supervised acceptance conditions, current-X classification accuracy, long-session reliability, or account safety.
 
 ## Fixed behavior
 

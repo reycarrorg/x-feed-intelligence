@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import ctypes
 import json
 import os
 import shutil
@@ -73,9 +74,21 @@ MIGRATION_CHECKSUM = hashlib.sha256(MIGRATION_SQL.encode()).hexdigest()
 
 
 def _is_local_path(path: Path) -> bool:
-    lowered = str(path.resolve()).lower()
-    denied = ("/library/cloudstorage/", "/icloud drive/", "/dropbox/", "/google drive/", "/volumes/")
-    return not any(marker in lowered for marker in denied)
+    resolved = path.resolve()
+    lowered = str(resolved).replace("\\", "/").lower()
+    denied = (
+        "/library/cloudstorage/", "/icloud drive/", "/iclouddrive/",
+        "/dropbox/", "/google drive/", "/onedrive", "/volumes/",
+    )
+    if lowered.startswith("//") or any(marker in lowered for marker in denied):
+        return False
+    if os.name == "nt":
+        drive_type = ctypes.windll.kernel32.GetDriveTypeW
+        drive_type.argtypes = [ctypes.c_wchar_p]
+        drive_type.restype = ctypes.c_uint
+        # Fixed, removable, and RAM disks are local; mapped network drives are not.
+        return bool(resolved.anchor) and drive_type(resolved.anchor) in (2, 3, 6)
+    return True
 
 
 def _sha256(path: Path) -> str:

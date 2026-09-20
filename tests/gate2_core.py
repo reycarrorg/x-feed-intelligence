@@ -118,10 +118,19 @@ class ValidatorTests(unittest.TestCase):
             with self.assertRaises(ValidationError) as size: read_bounded_file(oversized)
             self.assertEqual("REJECTED_PACKET_LIMIT", size.exception.code)
             self.assertNotIn("SECRET-CANARY", str(size.exception))
+
+    def test_bounded_file_read_rejects_symlink_when_platform_can_create_one(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
             target = root / "target.json"
             target.write_text("{}")
             link = root / "link.json"
-            link.symlink_to(target)
+            try:
+                link.symlink_to(target)
+            except OSError as exc:
+                if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                    self.skipTest("Windows symlink creation privilege unavailable")
+                raise
             with self.assertRaises(ValidationError) as linked: read_bounded_file(link)
             self.assertEqual("REJECTED_INPUT_FILE", linked.exception.code)
 
@@ -230,6 +239,10 @@ class StoreTests(unittest.TestCase):
     def test_nonlocal_database_and_backup_are_rejected_before_write(self):
         with self.assertRaises(StoreError) as database: Store(Path("/Volumes/xfi-nonlocal-test/private.sqlite"))
         self.assertEqual("NONLOCAL_DATABASE_REJECTED", database.exception.code)
+        synced = self.root / "Google Drive" / "private.sqlite"
+        with self.assertRaises(StoreError) as synced_database: Store(synced)
+        self.assertEqual("NONLOCAL_DATABASE_REJECTED", synced_database.exception.code)
+        self.assertFalse(synced.parent.exists())
         with Store(self.db) as store:
             with self.assertRaises(StoreError) as backup: store.backup(Path("/Volumes/xfi-nonlocal-test/backup.sqlite"), "2030-01-02")
         self.assertEqual("NONLOCAL_BACKUP_REJECTED", backup.exception.code)
@@ -248,8 +261,19 @@ class StoreTests(unittest.TestCase):
             restored_store.connection.commit()
         with Store(self.db) as original:
             self.assertEqual("1", original.connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0])
+
+    def test_restore_rejects_symlink_when_platform_can_create_one(self):
+        backup = self.root / "backup.sqlite"
+        with Store(self.db) as store:
+            store.import_envelope(self.envelope)
+            store.backup(backup, "2030-01-02")
         link = self.root / "backup-link.sqlite"
-        link.symlink_to(backup)
+        try:
+            link.symlink_to(backup)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows symlink creation privilege unavailable")
+            raise
         with self.assertRaises(StoreError) as linked: Store.restore(link, self.root / "linked-restore.sqlite")
         self.assertEqual("RESTORE_PATH_REJECTED", linked.exception.code)
 

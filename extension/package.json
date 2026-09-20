@@ -13,6 +13,8 @@
     "prepare:wxt": "wxt prepare",
     "build": "wxt build -b chrome",
     "build:firefox": "wxt build -b firefox",
+    "dev:firefox": "wxt -b firefox",
+    "run:firefox": "pnpm dlx web-ext@10.6.0 run --source-dir .output/firefox-mv3 --no-reload --start-url about:debugging#/runtime/this-firefox --no-input",
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "zip": "wxt zip -b chrome"

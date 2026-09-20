@@ -4,7 +4,12 @@ X Feed Intelligence is a local-first project for turning user-supplied X/Twitter
 
 ## Status
 
-**Research Gates 0–2 are merged. A Gate 3 hybrid review extension is implemented on an unmerged private branch.** Gate 2 provides a recording-first CLI, strict normalized analysis core, product-owned SQLite store, Apple Vision recording helper, non-distributable reserved-origin harness, deterministic synthetic evidence, and a reproducible recording-only private package. Gate 3 adds a reviewable Manifest V3 extension that can collect visible top-level cards only after the user grants the exact `https://x.com/*` permission and presses Start. A limited, user-authorized Brave smoke test of the review build passed on September 16, 2026; [the evidence and remaining gates are recorded here](docs/gate3/BRAVE_SMOKE_TEST_2026-09-16.md).
+**Research Gates 0–2 are merged. A Gate 3 hybrid review extension is implemented on an unmerged review branch.** Gate 2 provides a recording-first CLI, strict normalized analysis core, product-owned SQLite store, Apple Vision recording helper, non-distributable reserved-origin harness, deterministic synthetic evidence, and a reproducible recording-only private package. Gate 3 adds a reviewable Manifest V3 extension that can collect visible top-level cards only after the user grants the exact `https://x.com/*` permission and presses Start. A limited, user-authorized Brave smoke test of the review build passed on September 16, 2026; [the evidence and remaining gates are recorded here](docs/gate3/BRAVE_SMOKE_TEST_2026-09-16.md).
+
+A Windows Firefox development build is also available on this branch. It builds
+and loads as a temporary add-on in a separate Firefox profile; this is not a
+signed release or an authenticated-X acceptance result. See the [Windows
+Firefox instructions](docs/gate3/FIREFOX_WINDOWS.md).
 
 The accepted Gate 0 architecture is a local hybrid with two independent inputs and one normalized analysis core:
 
@@ -47,6 +52,7 @@ Authenticated X testing requires the user. CAPTCHA, login challenges, rate limit
 - [Gate 3 upstream reuse and license provenance](docs/gate3/UPSTREAM_REUSE.md)
 - [Gate 3 user-supervised test protocol](docs/gate3/USER_SUPERVISED_TEST.md)
 - [Gate 3 limited Brave smoke-test record](docs/gate3/BRAVE_SMOKE_TEST_2026-09-16.md)
+- [Windows Firefox development run](docs/gate3/FIREFOX_WINDOWS.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Security policy](SECURITY.md)
 

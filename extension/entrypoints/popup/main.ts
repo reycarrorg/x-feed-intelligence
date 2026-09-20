@@ -136,7 +136,7 @@ elements.revoke.addEventListener('click', async () => {
   if (latestStatus && ['CAPTURING', 'PAUSED_HIDDEN'].includes(latestStatus.state)) return void setMessage('Stop collection before revoking access.');
   permissionGranted = !(await browser.permissions.remove({ origins: [EXACT_PATTERN] }));
   render(emptyStatus(permissionGranted ? 'ARMED' : 'INACTIVE'));
-  setMessage(permissionGranted ? 'Chrome did not revoke access.' : 'X access revoked. No collection can run.');
+  setMessage(permissionGranted ? 'Browser did not revoke access.' : 'X access revoked. No collection can run.');
 });
 
 void refresh();
