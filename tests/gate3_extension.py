@@ -215,9 +215,14 @@ class CapabilityBoundaryTests(unittest.TestCase):
         collector = (ROOT / "extension" / "entrypoints" / "collector.content.ts").read_text(encoding="utf-8")
         self.assertIn("optional_host_permissions: ['https://x.com/*']", config)
         self.assertIsNone(re.search(r"^\s*host_permissions\s*:", config, flags=re.MULTILINE))
-        self.assertIn("permissions: ['downloads', 'storage']", config)
+        self.assertIn("browser === 'firefox' ? ['downloads', 'storage'] : ['downloads', 'storage', 'offscreen']", config)
         self.assertIn("matches: ['https://x.com/*']", collector)
         self.assertIn("'assisted_scroll' : 'manual_scroll'", collector)
+        self.assertNotIn("xfi-lifecycle-indicator", collector)
+        self.assertNotIn("attachShadow", collector)
+        popup = (ROOT / "extension" / "entrypoints" / "popup" / "main.ts").read_text(encoding="utf-8")
+        self.assertNotIn("createObjectURL", popup)
+        self.assertIn("XFI_SAVE_EXPORT", popup)
 
 
 if __name__ == "__main__":

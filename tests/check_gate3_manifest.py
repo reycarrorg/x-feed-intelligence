@@ -30,12 +30,18 @@ if manifest.get("optional_host_permissions") != ["https://x.com/*"]:
     errors.append("optional X origin permission drift")
 if manifest.get("host_permissions"):
     errors.append("always-on host permission is forbidden")
-if sorted(manifest.get("permissions", [])) != ["downloads", "storage"]:
+expected_permissions = ["downloads", "storage"] if args.browser == "firefox" else ["downloads", "offscreen", "storage"]
+if sorted(manifest.get("permissions", [])) != expected_permissions:
     errors.append(f"unexpected extension permissions: {manifest.get('permissions')}")
 if manifest.get("action", {}).get("default_popup") != "popup.html":
     errors.append("action popup contract drift")
-if manifest.get("background"):
-    errors.append("background execution is forbidden")
+background = manifest.get("background", {})
+if args.browser == "firefox" and background != {"scripts": ["background.js"]}:
+    errors.append("Firefox export background contract drift")
+if args.browser == "chrome" and background != {"service_worker": "background.js"}:
+    errors.append("Chromium export background contract drift")
+if args.browser == "chrome" and not (BUILD / "offscreen.html").is_file():
+    errors.append("Chromium blob holder missing")
 if args.browser == "firefox":
     if manifest.get("sidebar_action"):
         errors.append("Firefox sidebar is forbidden")
@@ -55,6 +61,9 @@ elif manifest.get("browser_specific_settings") or manifest.get("sidebar_action")
 scripts = manifest.get("content_scripts", [])
 if len(scripts) != 1 or scripts[0].get("matches") != ["https://x.com/*"] or scripts[0].get("all_frames", False):
     errors.append("content script origin/frame boundary drift")
+content = (BUILD / scripts[0]["js"][0]).read_text(encoding="utf-8", errors="replace") if len(scripts) == 1 else ""
+if "xfi-lifecycle-indicator" in content or "attachShadow" in content:
+    errors.append("in-page collector UI is forbidden")
 
 bundle = "\n".join(
     path.read_text(encoding="utf-8", errors="replace")

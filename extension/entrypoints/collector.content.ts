@@ -78,7 +78,6 @@ export class LiveCollector {
   private promotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
   private observationBytes = 0;
   private exportSnapshot: { id: string; sessionId: string; json: string; chunks: Array<[number, number]> } | null = null;
-  private indicator: HTMLElement | null = null;
   private autoScroll = false;
   private assistedEver = false;
   private scrollTimer: number | null = null;
@@ -90,7 +89,6 @@ export class LiveCollector {
   private scrollDelay = 1800;
 
   constructor() {
-    this.renderIndicator();
     document.addEventListener('visibilitychange', () => this.visibilityChanged());
   }
 
@@ -130,7 +128,6 @@ export class LiveCollector {
     this.event('SESSION_STARTED');
     this.attach();
     this.durationTimer = window.setTimeout(() => this.limitStop('DURATION_LIMIT'), LIMITS.maxDurationSeconds * 1000);
-    this.renderIndicator();
     return this.response(true);
   }
 
@@ -140,7 +137,6 @@ export class LiveCollector {
     this.state = 'STOPPED';
     this.stoppedAt = Date.now();
     this.event('STOPPED_USER');
-    this.renderIndicator();
     return this.response(true);
   }
 
@@ -221,7 +217,6 @@ export class LiveCollector {
     this.detach();
     this.resetSession();
     this.state = 'ARMED';
-    this.renderIndicator();
     return this.response(true);
   }
 
@@ -399,7 +394,6 @@ export class LiveCollector {
         this.promotionCounts.ambiguous += 1;
         this.observationBytes += byteLength(existing) - previousBytes;
         this.event('OBSERVATION_UPDATED', 'PROMOTION_STATE_CHANGED');
-        this.renderIndicator();
       }
       if (existing) {
         const before = byteLength(existing);
@@ -433,7 +427,7 @@ export class LiveCollector {
         }
         existing.last_observed_at = new Date().toISOString();
         this.observationBytes += byteLength(existing) - before;
-        if (enriched) { this.event('OBSERVATION_UPDATED', 'CONTEXT_ENRICHED'); this.renderIndicator(); }
+        if (enriched) this.event('OBSERVATION_UPDATED', 'CONTEXT_ENRICHED');
       }
       if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) this.hardStop('INJECTION_CONTENT');
       return;
@@ -523,7 +517,6 @@ export class LiveCollector {
     this.promotionCounts[parsed.promotion] += 1;
     this.identityIndexes.set(identity, appearance);
     this.event('OBSERVATION_ACCEPTED', 'COUNT_ONLY');
-    this.renderIndicator();
 
     if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) return void this.hardStop('INJECTION_CONTENT');
     if (this.ambiguousCount / this.observations.length > LIMITS.maxAmbiguityRatio && this.observations.length >= 20) return void this.hardStop('AMBIGUITY_LIMIT');
@@ -535,13 +528,11 @@ export class LiveCollector {
       this.detach();
       this.state = 'PAUSED_HIDDEN';
       this.event('PAUSED_DOCUMENT_HIDDEN');
-      this.renderIndicator();
     } else if (document.visibilityState === 'visible' && this.state === 'PAUSED_HIDDEN') {
       const challenge = challengeCode();
       if (challenge) return void this.hardStop(challenge);
       this.state = 'CAPTURING';
       this.attach();
-      this.renderIndicator();
     }
   }
 
@@ -551,7 +542,6 @@ export class LiveCollector {
     this.stoppedAt = Date.now();
     this.state = 'LIMIT_REACHED';
     this.event(code);
-    this.renderIndicator();
   }
 
   private hardStop(code: string): void {
@@ -561,27 +551,8 @@ export class LiveCollector {
     this.stoppedAt = Date.now();
     this.state = 'ERROR';
     this.event(safe);
-    this.renderIndicator();
   }
 
-  private renderIndicator(): void {
-    if (!this.indicator) {
-      const host = document.createElement('div');
-      host.id = 'xfi-lifecycle-indicator';
-      host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;pointer-events:none';
-      const shadow = host.attachShadow({ mode: 'closed' });
-      const label = document.createElement('div');
-      label.setAttribute('role', 'status');
-      label.setAttribute('aria-live', 'polite');
-      label.style.cssText = 'font:600 12px/1.2 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 10px;border-radius:999px;background:#111827;color:#fff;border:1px solid #4b5563;box-shadow:0 4px 16px rgba(0,0,0,.25)';
-      shadow.append(label);
-      document.documentElement.append(host);
-      this.indicator = label;
-    }
-    const status = this.status();
-    this.indicator.textContent = `XFI ${status.state.replace('_', ' ')} · ${status.observationCount}`;
-    this.indicator.style.background = status.state === 'ERROR' ? '#991b1b' : status.state === 'CAPTURING' ? '#065f46' : '#111827';
-  }
 }
 
 export default defineContentScript({

@@ -10,6 +10,7 @@ The review build was locally installed in Brave and passed one bounded authentic
 
 - Access is optional and limited to `https://x.com/*`.
 - Permission grant and collection start are distinct user actions.
+- All visible controls and status are confined to the extension action popup; the content script adds no badge or other UI to X.
 - Collection observes top-level cards only after they reach at least 50% viewport visibility.
 - The user can scroll normally or explicitly start bounded assisted scrolling from the popup. Assisted scrolling waits for DOM settling, moves no more than 120 pixels per step, slows when no new cards are captured, and stops on hidden-tab, challenge, rate-limit, no-progress, or session-limit conditions.
 - The tab becoming hidden pauses collection.
@@ -20,7 +21,7 @@ The review build was locally installed in Brave and passed one bounded authentic
 
 ## Deliberately absent
 
-The extension has no background service worker, network fetch/XHR/WebSocket, request interception, cookie read, private API, media download, synthetic input event, account action, or automatic retry path. Assisted scrolling is the only new page action and is opt-in.
+The extension has a narrow export background context so a Save dialog does not depend on the transient popup document. Chromium uses an offscreen extension document solely to hold a local Blob URL; Firefox uses its extension background event page. The exact Save As lifecycle in the user's Firefox client remains unverified. Neither context requests X or other network data. The extension has no network fetch/XHR/WebSocket, request interception, cookie read, private API, media download, synthetic input event, account action, or automatic retry path. Assisted scrolling is the only new page action and is opt-in.
 
 ## Local review commands
 

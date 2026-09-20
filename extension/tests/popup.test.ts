@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   contains: vi.fn(),
   sendMessage: vi.fn(),
+  runtimeSend: vi.fn(),
   request: vi.fn(),
   remove: vi.fn(),
   download: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('wxt/browser', () => ({
   browser: {
     windows: { getLastFocused: mocks.getLastFocused, getCurrent: mocks.getCurrent },
     tabs: { query: mocks.query, sendMessage: mocks.sendMessage },
+    runtime: { sendMessage: mocks.runtimeSend },
     permissions: { contains: mocks.contains, request: mocks.request, remove: mocks.remove },
     downloads: { download: mocks.download, search: mocks.search, removeFile: mocks.removeFile, onChanged: { addListener: mocks.onChanged } },
     storage: { local: { get: mocks.storageGet, set: mocks.storageSet } },
@@ -58,6 +60,7 @@ beforeEach(() => {
   mocks.storageSet.mockResolvedValue(undefined);
   mocks.search.mockResolvedValue([]);
   mocks.download.mockResolvedValue(11);
+  mocks.runtimeSend.mockResolvedValue({ ok: true, sessionId: 'synthetic' });
 });
 
 describe('popup target tab', () => {
@@ -115,26 +118,15 @@ describe('popup target tab', () => {
     expect(document.querySelector('#ambiguous')?.textContent).toBe('3');
   });
 
-  it('downloads a complete chunked JSON export from the same X tab', async () => {
+  it('hands export to the background without creating a popup-owned blob URL', async () => {
     mocks.query.mockResolvedValue([{ id: 7 }]);
-    const json = '{"observations":[1,2]}';
-    const chunks = [json.slice(0, 11), json.slice(11)];
-    mocks.sendMessage.mockImplementation(async (_tabId: number, command: { type: string; index?: number }) => {
-      if (command.type === 'XFI_EXPORT') return { ok: true, status: { ...status, observationCount: 2 }, export: { id: 'export-1', sessionId: 'synthetic', chunkCount: 2, totalBytes: new TextEncoder().encode(json).length } };
-      if (command.type === 'XFI_EXPORT_CHUNK') return { ok: true, status, chunk: chunks[command.index!] };
-      return { ok: true, status: { ...status, observationCount: 2 } };
-    });
-    const createObjectURL = vi.fn(() => 'blob:synthetic');
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    mocks.sendMessage.mockResolvedValue({ ok: true, status: { ...status, observationCount: 2 } });
 
     await import('../entrypoints/popup/main');
     await vi.waitFor(() => expect(document.querySelector('#total')?.textContent).toBe('2'));
     (document.querySelector('#export') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Save dialog opened'));
-    await vi.waitFor(() => expect(mocks.download).toHaveBeenCalledWith({ url: 'blob:synthetic', filename: 'xfi-capture-0001.json', saveAs: true, conflictAction: 'uniquify' }));
-    expect(mocks.sendMessage).toHaveBeenCalledWith(7, { type: 'XFI_EXPORT_CHUNK', exportId: 'export-1', index: 0 });
-    expect(mocks.sendMessage).toHaveBeenCalledWith(7, { type: 'XFI_EXPORT_CHUNK', exportId: 'export-1', index: 1 });
-    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(mocks.runtimeSend).toHaveBeenCalledWith({ type: 'XFI_SAVE_EXPORT', tabId: 7 });
+    expect(mocks.download).not.toHaveBeenCalled();
   });
 });

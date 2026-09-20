@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { CollectorCommand, CollectorResponse, CollectorStatus, LifecycleState } from '../../lib/contracts';
-import { reconcileOwnedExports, startOwnedExport } from '../../lib/export-retention';
+import { reconcileOwnedExports } from '../../lib/export-retention';
 
 const EXACT_PATTERN = 'https://x.com/*';
 
@@ -28,7 +28,6 @@ let latestStatus: CollectorStatus | null = null;
 let exporting = false;
 let refreshing = false;
 let lastRefreshDescription = '';
-const exportUrls = new Map<number, string>();
 
 function setMessage(value: string): void {
   elements.message.textContent = value;
@@ -157,42 +156,14 @@ elements.export.addEventListener('click', async () => {
   if (!tabId) return void setMessage('Select an X tab before exporting.');
   exporting = true;
   elements.export.disabled = true;
-  let exportId: string | null = null;
   try {
-    setMessage('Preparing local JSON export…');
-    const response = await send({ type: 'XFI_EXPORT' }, tabId);
-    render(response.status);
-    if (!response.ok || !response.export) throw new Error(response.error || 'EXPORT_FAILED');
-    const { id, sessionId, chunkCount, totalBytes } = response.export;
-    exportId = id;
-    const chunks: string[] = [];
-    let receivedBytes = 0;
-    for (let index = 0; index < chunkCount; index += 1) {
-      const part = await send({ type: 'XFI_EXPORT_CHUNK', exportId: id, index }, tabId);
-      if (!part.ok || typeof part.chunk !== 'string') throw new Error(part.error || 'EXPORT_CHUNK_FAILED');
-      chunks.push(part.chunk);
-      receivedBytes += new TextEncoder().encode(part.chunk).length;
-    }
-    if (receivedBytes !== totalBytes) throw new Error('EXPORT_SIZE_MISMATCH');
-    const blob = new Blob([...chunks, '\n'], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    let download: { id: number; sequence: number };
-    try {
-      download = await startOwnedExport(url);
-      exportUrls.set(download.id, url);
-    } catch (error) {
-      URL.revokeObjectURL(url);
-      throw error;
-    }
-    setMessage(`Save dialog opened for export ${sessionId}. Choose Documents. Older files are recycled only after a new tracked save completes.`);
-    window.setTimeout(() => { if (exportUrls.has(download.id)) { exportUrls.delete(download.id); URL.revokeObjectURL(url); } }, 600_000);
-    void reconcileOwnedExports().then(({ warning }) => { if (warning) setMessage(warning); });
+    setMessage('Preparing local JSON export and Save dialog…');
+    const reply = await browser.runtime.sendMessage({ type: 'XFI_SAVE_EXPORT', tabId }) as { ok: boolean; sessionId?: string; error?: string };
+    if (!reply?.ok) throw new Error(reply?.error || 'EXPORT_FAILED');
+    setMessage(`Save dialog opened for export ${reply.sessionId}. Choose Documents. Older files are recycled only after a new tracked save completes.`);
   } catch (error) {
     setMessage(`Export blocked: ${error instanceof Error ? error.message : 'unknown error'}`);
   } finally {
-    if (exportId) {
-      try { await send({ type: 'XFI_EXPORT_RELEASE', exportId }, tabId); } catch { /* Tab may have closed. */ }
-    }
     exporting = false;
     elements.export.disabled = (latestStatus?.observationCount || 0) === 0;
   }
@@ -217,12 +188,5 @@ elements.revoke.addEventListener('click', async () => {
 
 void refresh();
 void reconcileOwnedExports().then(({ warning }) => { if (warning) setMessage(warning); }).catch(() => setMessage('Could not verify saved exports; no files were recycled.'));
-browser.downloads.onChanged.addListener((delta) => {
-  if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') {
-    const url = exportUrls.get(delta.id);
-    if (url) { URL.revokeObjectURL(url); exportUrls.delete(delta.id); }
-  }
-  void reconcileOwnedExports().then(({ warning }) => { if (warning) setMessage(warning); });
-});
 const refreshTimer = window.setInterval(() => void refresh(), 1000);
 window.addEventListener('pagehide', () => window.clearInterval(refreshTimer), { once: true });

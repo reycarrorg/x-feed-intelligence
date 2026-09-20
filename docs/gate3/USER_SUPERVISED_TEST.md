@@ -6,7 +6,7 @@ This protocol defines full acceptance; the [September 16 limited Brave smoke tes
 
 1. Recheck current X terms, browser-extension policy, and account-enforcement risk from primary sources.
 2. Review the exact commit, dependency lock, generated manifest, build output, and third-party notices.
-3. Confirm the manifest has only `optional_host_permissions: ["https://x.com/*"]` plus `downloads` and `storage` for local Save As and verified retention; no always-on host permission or background worker.
+3. Confirm the manifest has only `optional_host_permissions: ["https://x.com/*"]` plus `downloads` and `storage` for local Save As and verified retention. Chromium additionally needs `offscreen` to hold the export Blob while its transient popup closes. A narrow background context handles exports; it must make no X or external network requests. There is no always-on host permission.
 4. Use a dedicated ordinary browser profile. The user performs login, MFA, consent, CAPTCHA, and recovery personally; credentials are never supplied to the extension or recorded in the repository.
 5. Prepare a simultaneous user-controlled screen recording if one-to-one recall measurement is desired.
 
