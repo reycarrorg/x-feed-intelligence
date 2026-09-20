@@ -23,10 +23,13 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   schemas/v1/observation.schema.json schemas/v1/canonical-post.schema.json \
   schemas/v1/analysis.schema.json schemas/v1/envelope.schema.json \
   schemas/v1/model-handoff.schema.json \
+  schemas/v2/common.schema.json schemas/v2/session.schema.json \
+  schemas/v2/observation.schema.json schemas/v2/envelope.schema.json \
   fixtures/synthetic/v1/manifest.json fixtures/synthetic/v1/dedup-role-collisions.json \
   fixtures/gate2/shared-corpus.json DEPENDENCIES.lock.json sbom/cyclonedx.cdx.json \
   docs/gate2/README.md docs/gate2/PACKAGE_BOUNDARY.md \
   docs/gate2/SECURITY_PRIVACY_REVIEW.md docs/gate2/GATE3_RESIDUAL_RISK.md \
+  docs/gate3/README.md docs/gate3/UPSTREAM_REUSE.md docs/gate3/USER_SUPERVISED_TEST.md \
   src/xfi/validation.py src/xfi/canonical.py src/xfi/store.py src/xfi/analysis.py src/xfi/render.py src/xfi/cli.py \
   src/xfi/recording.py src/xfi/browser.py \
   harness/synthetic/manifest.json harness/synthetic/synthetic-harness.js \
@@ -35,7 +38,13 @@ for path in README.md LICENSE.md NOTICE SECURITY.md CONTRIBUTING.md \
   native/recording-helper/main.swift native/harness-vm/main.swift \
   scripts/package_review.py scripts/measure_gate2.py \
   tests/gate1_acceptance.py tests/gate2_core.py tests/gate2_recording.py \
-  tests/gate2_browser.py tests/gate2_integration.py tests/gate2_security.py tests/gate2_cli.py; do
+  tests/gate2_browser.py tests/gate2_integration.py tests/gate2_security.py tests/gate2_cli.py \
+  tests/gate3_extension.py tests/check_gate3_manifest.py \
+  extension/package.json extension/pnpm-lock.yaml extension/wxt.config.ts extension/tsconfig.json extension/vitest.config.ts \
+  extension/lib/contracts.ts extension/lib/parser.ts extension/lib/classifier.ts \
+  extension/entrypoints/collector.content.ts extension/entrypoints/popup/index.html \
+  extension/entrypoints/popup/main.ts extension/entrypoints/popup/style.css extension/UPSTREAM_NOTICES.md \
+  extension/tests/parser.test.ts extension/tests/classifier.test.ts extension/tests/popup.test.ts extension/tests/messaging.test.ts; do
   test -s "$repo_root/$path" || { echo "missing or empty: $path" >&2; exit 1; }
 done
 
@@ -58,5 +67,6 @@ PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_recording.py"
 PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_integration.py"
 PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate2_cli.py"
 python3 "$repo_root/tests/gate2_security.py"
+PYTHONPATH="$repo_root/src" python3 "$repo_root/tests/gate3_extension.py"
 python3 "$repo_root/scripts/package_review.py" --check
-echo 'repository policy and Gate 2 checks passed'
+echo 'repository policy, Gate 2, and Gate 3 source-boundary checks passed'

@@ -23,14 +23,20 @@ def package_files() -> list[Path]:
     paths = [ROOT / item for item in BASE_FILES]
     for pattern in GLOBS:
         paths.extend(ROOT.glob(pattern))
-    return sorted({path for path in paths if path.relative_to(ROOT).as_posix() not in EXCLUDED})
+    # WindowsPath ordering is case-insensitive; sort by portable archive names.
+    return sorted(
+        {path for path in paths if path.relative_to(ROOT).as_posix() not in EXCLUDED},
+        key=lambda path: path.relative_to(ROOT).as_posix(),
+    )
 
 
 def package_entries(paths: list[Path]) -> list[tuple[str, bytes, bool]]:
     entries = []
     for path in paths:
         relative = path.relative_to(ROOT).as_posix()
-        data = path.read_bytes()
+        # All package inputs are UTF-8 text. Normalize checkout-specific line
+        # endings before hashing and packaging so Windows and Unix agree.
+        data = path.read_text(encoding="utf-8").encode("utf-8")
         if relative == "schemas/v1/session.schema.json":
             schema = json.loads(data)
             schema["title"] = "Recording-only packaged collection session v1"
@@ -64,8 +70,10 @@ def load_sbom() -> dict:
 
 def check_inputs(paths: list[Path], entries: list[tuple[str, bytes, bool]], sbom: dict) -> None:
     lock = json.loads((ROOT / "DEPENDENCIES.lock.json").read_text())
-    if lock["product_dependencies"] != [] or len(lock["ci_dependencies"]) != 1:
+    if lock["product_dependencies"] != [] or [item.get("name") for item in lock["ci_dependencies"]] != ["actions/checkout", "actions/setup-node"]:
         raise SystemExit("dependency lock scope mismatch")
+    if [item.get("name") for item in lock.get("extension_dependencies", [])] != ["WXT", "TypeScript", "@types/chrome", "Vitest", "Happy DOM"]:
+        raise SystemExit("extension dependency inventory mismatch")
     if [item.get("name") for item in lock.get("test_dependencies", [])] != ["playwright-core", "Chrome for Testing"]:
         raise SystemExit("test-only browser dependency inventory mismatch")
     if sbom["metadata"]["component"]["hashes"][0]["content"] != source_digest(entries):
@@ -107,7 +115,7 @@ def build(destination: Path, *, replace: bool = False) -> dict:
         info.compress_type = zipfile.ZIP_DEFLATED
         archive.writestr(info, (json.dumps(sbom, indent=2) + "\n").encode())
     value = hashlib.sha256(destination.read_bytes()).hexdigest()
-    return {"path": str(destination), "sha256": value, "file_count": len(entries) + 1, "source_digest": source_digest(entries), "product_dependency_count": 0, "ci_dependency_count": 1}
+    return {"path": str(destination), "sha256": value, "file_count": len(entries) + 1, "source_digest": source_digest(entries), "product_dependency_count": 0, "ci_dependency_count": 2}
 
 
 def verify_reproducible() -> dict:

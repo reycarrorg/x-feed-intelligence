@@ -13,7 +13,7 @@
 
 ## Gate 1 — Threat model, schemas, and evaluation contracts
 
-**Contract set complete on `gate1/contracts-and-synthetic-evidence`; pending review.** The [Gate 1 index](gate1/README.md) maps every exit criterion to its contract and deterministic evidence.
+**Complete and merged.** The [Gate 1 index](gate1/README.md) maps every exit criterion to its contract and deterministic evidence.
 
 - Define post, author, media, provenance, deduplication, classification, verification, and recommendation schemas.
 - Define prompt-injection and sensitive-data redaction contracts.
@@ -25,7 +25,7 @@ Gate 1 uses only authored synthetic data and standard-library validation. Passin
 
 ## Gate 2 — Production MVP on synthetic and supplied data
 
-**Not started.**
+**Complete and merged.**
 
 - Build local screen-recording ingestion and candidate-frame extraction.
 - Build passive origin-scoped browser capture against synthetic fixtures.
@@ -37,12 +37,13 @@ The reviewed work packages and exact entry criteria are in the [Gate 2 work brea
 
 ## Gate 3 — User-supervised acceptance
 
-**Not authorized or started.** This is the earliest gate that may include an explicitly approved live X session.
+**Review extension implemented on `gate3/hybrid-extension`; authenticated acceptance not started.** The branch adds the separately versioned live-DOM contract and a buildable manual-scroll Manifest V3 collector. Static, unit, compile, generated-manifest, and existing-core integration checks are complete locally. Installation and live authenticated testing remain separate user-supervised gates.
 
 - Install a review build only with user approval.
 - Test passive capture on an ordinary X feed session with the user signed in.
 - Stop on challenges, rate limits, or unexpected permissions.
 - Compare captured-post count and report fidelity against a screen recording.
+- Do not add automatic scrolling, private X interfaces, network interception, or account actions.
 
 ## Gate 4 — Optional public release
 

@@ -13,7 +13,7 @@ from .errors import ValidationError, XFIError
 from .render import atomic_write, private_json, private_markdown, sanitize
 from .recording import ingest as ingest_recording, preflight as preflight_recording
 from .store import Store
-from .validation import load_and_validate_envelope, read_bounded_file, strict_json_loads
+from .validation import MAX_LIVE_PACKET_BYTES, load_and_validate_envelope, read_bounded_file, strict_json_loads
 
 
 def repository_root() -> Path:
@@ -21,7 +21,7 @@ def repository_root() -> Path:
 
 
 def load_envelope(path: Path) -> dict:
-    return load_and_validate_envelope(read_bounded_file(path), repository_root() / "schemas" / "v1")
+    return load_and_validate_envelope(read_bounded_file(path, MAX_LIVE_PACKET_BYTES), repository_root() / "schemas" / "v1")
 
 
 def load_json(path: Path, maximum: int = 262_144) -> dict:

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.x-feed-intelligence.invalid/v2/common.schema.json",
+  "title": "X Feed Intelligence v2 common types",
+  "$defs": {
+    "NonEmptyString": {"$ref": "../v1/common.schema.json#/$defs/NonEmptyString"},
+    "Confidence": {"$ref": "../v1/common.schema.json#/$defs/Confidence"},
+    "AuthorRef": {"$ref": "../v1/common.schema.json#/$defs/AuthorRef"},
+    "Relationship": {"$ref": "../v1/common.schema.json#/$defs/Relationship"},
+    "Media": {"$ref": "../v1/common.schema.json#/$defs/Media"},
+    "Uncertainty": {"$ref": "../v1/common.schema.json#/$defs/Uncertainty"},
+    "PromotedCard": {"$ref": "../v1/common.schema.json#/$defs/PromotedCard"},
+    "Provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance_id", "modality", "collector_version", "parser_or_ocr_version", "field", "confidence"],
+      "properties": {
+        "provenance_id": {"$ref": "#/$defs/NonEmptyString"},
+        "modality": {"const": "live_dom"},
+        "collector_version": {"$ref": "#/$defs/NonEmptyString"},
+        "parser_or_ocr_version": {"$ref": "#/$defs/NonEmptyString"},
+        "field": {"$ref": "#/$defs/NonEmptyString"},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "video_time_ms": {"type": ["integer", "null"], "minimum": 0},
+        "crop_xywh": {
+          "type": ["array", "null"],
+          "prefixItems": [
+            {"type": "integer", "minimum": 0},
+            {"type": "integer", "minimum": 0},
+            {"type": "integer", "minimum": 1},
+            {"type": "integer", "minimum": 1}
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "confidence": {"$ref": "#/$defs/Confidence"}
+      }
+    }
+  }
+}
