@@ -30,7 +30,9 @@ def package_entries(paths: list[Path]) -> list[tuple[str, bytes, bool]]:
     entries = []
     for path in paths:
         relative = path.relative_to(ROOT).as_posix()
-        data = path.read_bytes()
+        # All package inputs are UTF-8 text. Normalize checkout-specific line
+        # endings before hashing and packaging so Windows and Unix agree.
+        data = path.read_text(encoding="utf-8").encode("utf-8")
         if relative == "schemas/v1/session.schema.json":
             schema = json.loads(data)
             schema["title"] = "Recording-only packaged collection session v1"
