@@ -79,6 +79,15 @@ export class LiveCollector {
   private observationBytes = 0;
   private exportSnapshot: { id: string; sessionId: string; json: string; chunks: Array<[number, number]> } | null = null;
   private indicator: HTMLElement | null = null;
+  private autoScroll = false;
+  private assistedEver = false;
+  private scrollTimer: number | null = null;
+  private scrollPauseReason: string | null = null;
+  private lastDomChange = Date.now();
+  private lastScrollProgress = Date.now();
+  private lastScrollY = 0;
+  private lastScrollObservationCount = 0;
+  private scrollDelay = 1800;
 
   constructor() {
     this.renderIndicator();
@@ -96,7 +105,8 @@ export class LiveCollector {
       hardStopCode: this.stopCode,
       startedAt: this.startedAt === null ? null : new Date(this.startedAt).toISOString(),
       elapsedSeconds: this.startedAt === null ? 0 : Math.max(0, Math.floor((now - this.startedAt) / 1000)),
-      autoScroll: false,
+      autoScroll: this.autoScroll,
+      scrollPauseReason: this.scrollPauseReason,
       networkRequests: 0,
       accountActions: 0,
     };
@@ -134,6 +144,79 @@ export class LiveCollector {
     return this.response(true);
   }
 
+  startScroll(): CollectorResponse {
+    if (this.state !== 'CAPTURING' || document.visibilityState !== 'visible') return this.response(false, 'SCROLL_REQUIRES_VISIBLE_CAPTURE');
+    const challenge = challengeCode();
+    if (challenge) { this.hardStop(challenge); return this.response(false, challenge); }
+    if (this.autoScroll) return this.response(true);
+    this.autoScroll = true;
+    this.assistedEver = true;
+    this.scrollPauseReason = null;
+    this.lastDomChange = Date.now();
+    this.lastScrollProgress = Date.now();
+    this.lastScrollY = window.scrollY;
+    this.lastScrollObservationCount = this.observations.length;
+    this.scrollDelay = 1800;
+    this.event('ASSISTED_SCROLL_STARTED');
+    this.scheduleScroll();
+    return this.response(true);
+  }
+
+  stopScroll(): CollectorResponse {
+    this.stopScrollInternal('USER_STOP');
+    return this.response(true);
+  }
+
+  private stopScrollInternal(reason: string): void {
+    if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer);
+    this.scrollTimer = null;
+    if (this.autoScroll) this.event('ASSISTED_SCROLL_STOPPED', reason);
+    this.autoScroll = false;
+    this.scrollPauseReason = reason;
+  }
+
+  private scheduleScroll(): void {
+    if (!this.autoScroll) return;
+    this.scrollTimer = window.setTimeout(() => this.scrollTick(), this.scrollDelay);
+  }
+
+  private scrollTick(): void {
+    this.scrollTimer = null;
+    if (!this.autoScroll) return;
+    const challenge = challengeCode();
+    if (challenge) return void this.hardStop(challenge);
+    if (this.state !== 'CAPTURING' || document.visibilityState !== 'visible') return void this.stopScrollInternal('HIDDEN_OR_STOPPED');
+    const now = Date.now();
+    if (now - this.lastScrollProgress > 20_000) return void this.limitStop('AUTO_SCROLL_NO_PROGRESS');
+    // Wait for visible cards to hydrate and process before moving the viewport.
+    if (now - this.lastDomChange < 700) {
+      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.25));
+      return void this.scheduleScroll();
+    }
+    document.querySelectorAll(SELECTORS.post).forEach((card) => {
+      if (!card.parentElement?.closest(SELECTORS.post) && viewportVisibilityRatio(card) >= LIMITS.minimumVisibilityRatio) {
+        this.ratios.set(card, 1);
+        this.process(card);
+      }
+    });
+    if (this.state !== 'CAPTURING') return;
+    const gained = this.observations.length - this.lastScrollObservationCount;
+    if (gained > 0) {
+      this.lastScrollProgress = now;
+      this.lastScrollObservationCount = this.observations.length;
+      this.scrollDelay = Math.max(1200, Math.round(this.scrollDelay * 0.9));
+    } else {
+      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.25));
+    }
+    const oldY = window.scrollY;
+    window.scrollBy({ top: Math.min(120, Math.max(60, Math.floor(innerHeight * 0.12))), behavior: 'instant' });
+    if (window.scrollY <= oldY && window.scrollY <= this.lastScrollY) {
+      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+    }
+    this.lastScrollY = window.scrollY;
+    this.scheduleScroll();
+  }
+
   discard(): CollectorResponse {
     this.detach();
     this.resetSession();
@@ -156,7 +239,7 @@ export class LiveCollector {
         origin: EXACT_ORIGIN,
         collector_version: COLLECTOR_VERSION,
         privacy_profile: 'default_local',
-        collection_mode: 'manual_scroll',
+        collection_mode: this.assistedEver ? 'assisted_scroll' : 'manual_scroll',
         limits: {
           max_candidates: LIMITS.maxCandidates,
           max_duration_seconds: LIMITS.maxDurationSeconds,
@@ -199,6 +282,9 @@ export class LiveCollector {
   releaseExport(id: string): CollectorResponse {
     if (this.exportSnapshot?.id !== id) return this.response(false, 'INVALID_EXPORT_ID');
     this.exportSnapshot = null;
+    this.stopScrollInternal('SESSION_RESET');
+    this.assistedEver = false;
+    this.scrollPauseReason = null;
     return this.response(true);
   }
 
@@ -250,6 +336,7 @@ export class LiveCollector {
       }
     }, { threshold: [0, LIMITS.minimumVisibilityRatio, 1] });
     this.mutationObserver = new MutationObserver((mutations) => {
+      this.lastDomChange = Date.now();
       const challengeNow = challengeCode();
       if (challengeNow) return void this.hardStop(challengeNow);
       const changed = new Set<Element>();
@@ -270,6 +357,7 @@ export class LiveCollector {
   }
 
   private detach(): void {
+    this.stopScrollInternal('CAPTURE_STOPPED');
     this.intersectionObserver?.disconnect();
     this.mutationObserver?.disconnect();
     this.intersectionObserver = null;
@@ -291,7 +379,7 @@ export class LiveCollector {
     if (ratio < LIMITS.minimumVisibilityRatio || document.visibilityState !== 'visible') return;
     const parsed = parseCard(article);
     const identity = parsed.platformPostId || parsed.canonicalPermalink || `${parsed.handle || 'unknown'}:${parsed.displayedTimestamp || 'unknown'}:${parsed.visibleText || ''}`;
-    const signature = stableString({ identity, text: parsed.visibleText, author: parsed.handle, promotion: parsed.promotion, media: parsed.media });
+    const signature = stableString({ identity, text: parsed.visibleText, author: parsed.handle, promotion: parsed.promotion, media: parsed.media, quote: parsed.quote, links: parsed.outboundLinks });
     const node = this.nodeKey(article);
     if (this.seenSignatures.get(node) === signature) return;
     const existingIndex = this.identityIndexes.get(identity);
@@ -312,6 +400,40 @@ export class LiveCollector {
         this.observationBytes += byteLength(existing) - previousBytes;
         this.event('OBSERVATION_UPDATED', 'PROMOTION_STATE_CHANGED');
         this.renderIndicator();
+      }
+      if (existing) {
+        const before = byteLength(existing);
+        let enriched = false;
+        if ((!existing.visible_text || String(parsed.visibleText || '').length > String(existing.visible_text).length) && parsed.visibleText) { existing.visible_text = parsed.visibleText; enriched = true; }
+        const priorQuote = existing.quote_context as { platform_post_id?: string | null; handle?: string | null; visible_text?: string | null; media?: unknown[] } | null;
+        if (parsed.quote && (!priorQuote || (
+          (!priorQuote.platform_post_id || !!parsed.quote.id) &&
+          (!priorQuote.handle || !!parsed.quote.handle) &&
+          String(parsed.quote.text || '').length >= String(priorQuote.visible_text || '').length &&
+          parsed.quote.media.length >= (priorQuote.media?.length || 0) &&
+          (String(parsed.quote.text || '').length > String(priorQuote.visible_text || '').length || parsed.quote.media.length > (priorQuote.media?.length || 0) || (!priorQuote.platform_post_id && !!parsed.quote.id))
+        ))) {
+          existing.quote_context = { platform_post_id: parsed.quote.id, canonical_permalink: parsed.quote.permalink, display_name: parsed.quote.displayName,
+            handle: parsed.quote.handle, visible_text: parsed.quote.text, media: parsed.quote.media.map((item) => ({ kind: item.kind, alt_text: item.altText })) };
+          existing.relationships = parsed.quote.id ? [{ kind: 'quotes', source_local_post_id: `${existing.observation_id}-quoted-source`,
+            source_platform_post_id: parsed.quote.id, confidence: 0.9, provenance_ids: [(existing.provenance as Array<{ provenance_id: string }>)[0]!.provenance_id] }] : [];
+          enriched = true;
+        }
+        if (parsed.outboundLinks.length > (existing.outbound_links as unknown[]).length) { existing.outbound_links = parsed.outboundLinks; enriched = true; }
+        const media = existing.media as Array<Record<string, unknown>>;
+        if (parsed.media.length > media.length) {
+          const provenanceId = (existing.provenance as Array<{ provenance_id: string }>)[0]!.provenance_id;
+          existing.media = parsed.media.map((item, index) => ({ local_media_id: `${existing.observation_id}-media-${index}`, kind: item.kind, alt_text: item.altText,
+            visible_description: item.visibleDescription || null, perceptual_fingerprint: null, binary_collected: false, confidence: item.altText ? 0.9 : 0.6, provenance_ids: [provenanceId] }));
+          enriched = true;
+        }
+        const uncertainties = existing.uncertainty as Array<{ code: string }>;
+        for (const code of parsed.uncertaintyCodes) if (!uncertainties.some((item) => item.code === code) && uncertainties.length < 64) {
+          uncertainties.push({ code, field: 'observation', severity: 'review', requires_review: true, safe_detail: null } as { code: string }); enriched = true;
+        }
+        existing.last_observed_at = new Date().toISOString();
+        this.observationBytes += byteLength(existing) - before;
+        if (enriched) { this.event('OBSERVATION_UPDATED', 'CONTEXT_ENRICHED'); this.renderIndicator(); }
       }
       if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) this.hardStop('INJECTION_CONTENT');
       return;
@@ -341,17 +463,22 @@ export class LiveCollector {
       platform_post_id: parsed.platformPostId,
       canonical_permalink: parsed.canonicalPermalink,
       visible_text: parsed.visibleText,
+      first_observed_at: new Date().toISOString(),
+      last_observed_at: new Date().toISOString(),
+      outbound_links: parsed.outboundLinks,
+      quote_context: parsed.quote ? { platform_post_id: parsed.quote.id, canonical_permalink: parsed.quote.permalink, display_name: parsed.quote.displayName,
+        handle: parsed.quote.handle, visible_text: parsed.quote.text, media: parsed.quote.media.map((item) => ({ kind: item.kind, alt_text: item.altText })) } : null,
       displayed_timestamp: parsed.displayedTimestamp,
       authors: [{
         local_author_id: safeAuthorId(parsed.handle, String(appearance)),
         platform_author_id: null,
         display_name: parsed.displayName,
         handle: parsed.handle,
-        role: parsed.uncertaintyCodes.includes('EMBEDDED_QUOTE_REVIEW_REQUIRED') ? 'quoting' : 'original',
+        role: parsed.quote ? 'quoting' : 'original',
         identity_confidence: parsed.handle ? 0.95 : 0.35,
         uncertainty_codes: parsed.handle ? [] : ['MISSING_AUTHOR_HANDLE'],
       }],
-      relationships: [],
+      relationships: parsed.quote?.id ? [{ kind: 'quotes', source_local_post_id: `${observationId}-quoted-source`, source_platform_post_id: parsed.quote.id, confidence: 0.9, provenance_ids: [provenanceId] }] : [],
       media: parsed.media.map((media, index) => ({
         local_media_id: `${observationId}-media-${index}`,
         kind: media.kind,
@@ -470,6 +597,8 @@ export default defineContentScript({
       switch (command.type) {
         case 'XFI_STATUS': sendResponse(collector.messageStatus()); return undefined;
         case 'XFI_START': sendResponse(collector.start()); return undefined;
+        case 'XFI_SCROLL_START': sendResponse(collector.startScroll()); return undefined;
+        case 'XFI_SCROLL_STOP': sendResponse(collector.stopScroll()); return undefined;
         case 'XFI_STOP': sendResponse(collector.stop()); return undefined;
         case 'XFI_EXPORT':
           void collector.exportPacket().then(sendResponse, () => sendResponse({ ok: false, status: collector.status(), error: 'EXPORT_FAILED' }));

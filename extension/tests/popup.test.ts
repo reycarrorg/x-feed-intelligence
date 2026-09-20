@@ -8,8 +8,12 @@ const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   request: vi.fn(),
   remove: vi.fn(),
-  openSidebar: vi.fn(),
-  isSidebarOpen: vi.fn(),
+  download: vi.fn(),
+  search: vi.fn(),
+  removeFile: vi.fn(),
+  storageGet: vi.fn(),
+  storageSet: vi.fn(),
+  onChanged: vi.fn(),
 }));
 
 vi.mock('wxt/browser', () => ({
@@ -17,14 +21,15 @@ vi.mock('wxt/browser', () => ({
     windows: { getLastFocused: mocks.getLastFocused, getCurrent: mocks.getCurrent },
     tabs: { query: mocks.query, sendMessage: mocks.sendMessage },
     permissions: { contains: mocks.contains, request: mocks.request, remove: mocks.remove },
-    sidebarAction: { open: mocks.openSidebar, isOpen: mocks.isSidebarOpen },
+    downloads: { download: mocks.download, search: mocks.search, removeFile: mocks.removeFile, onChanged: { addListener: mocks.onChanged } },
+    storage: { local: { get: mocks.storageGet, set: mocks.storageSet } },
   },
 }));
 
 const status = {
   state: 'ARMED', observationCount: 0, organicCount: 0, promotedCount: 0,
   ambiguousCount: 0, hardStopCode: null, startedAt: null, elapsedSeconds: 0,
-  autoScroll: false, networkRequests: 0, accountActions: 0,
+  autoScroll: false, scrollPauseReason: null, networkRequests: 0, accountActions: 0,
 };
 let tick: () => void;
 
@@ -43,14 +48,16 @@ beforeEach(() => {
     <button id="arm"></button><button id="start"></button>
     <button id="stop"></button><button id="export"></button>
     <button id="discard"></button><button id="revoke"></button>
-    <button id="sidebar" hidden></button>
+    <button id="scroll-start"></button><button id="scroll-stop"></button>
   `;
   mocks.getLastFocused.mockResolvedValue({ id: 42, type: 'normal' });
   mocks.getCurrent.mockResolvedValue({ id: 99, type: 'popup' });
   mocks.contains.mockResolvedValue(true);
   mocks.sendMessage.mockResolvedValue({ ok: true, status });
-  mocks.isSidebarOpen.mockResolvedValue(false);
-  mocks.openSidebar.mockResolvedValue(undefined);
+  mocks.storageGet.mockResolvedValue({});
+  mocks.storageSet.mockResolvedValue(undefined);
+  mocks.search.mockResolvedValue([]);
+  mocks.download.mockResolvedValue(11);
 });
 
 describe('popup target tab', () => {
@@ -92,13 +99,12 @@ describe('popup target tab', () => {
     expect((document.querySelector('#start') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('opens the Firefox sidebar on an explicit click and refreshes counters while it stays open', async () => {
+  it('keeps controls in the popup and refreshes counters while it stays open', async () => {
     mocks.getCurrent.mockResolvedValue({ id: 42, type: 'normal' });
     mocks.query.mockResolvedValue([{ id: 7 }]);
     await import('../entrypoints/popup/main');
     await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Ready.'));
-    (document.querySelector('#sidebar') as HTMLButtonElement).click();
-    expect(mocks.openSidebar).toHaveBeenCalledOnce();
+    expect(document.querySelector('#sidebar')).toBeNull();
     expect(mocks.getLastFocused).not.toHaveBeenCalled();
 
     mocks.sendMessage.mockResolvedValue({ ok: true, status: { ...status, state: 'CAPTURING', observationCount: 123, organicCount: 100, promotedCount: 20, ambiguousCount: 3 } });
@@ -121,15 +127,12 @@ describe('popup target tab', () => {
     const createObjectURL = vi.fn(() => 'blob:synthetic');
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
-    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      expect(this.download).toBe('xfi-synthetic.json');
-    });
 
     await import('../entrypoints/popup/main');
     await vi.waitFor(() => expect(document.querySelector('#total')?.textContent).toBe('2'));
     (document.querySelector('#export') as HTMLButtonElement).click();
-    await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('exported locally'));
-    expect(download).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Save dialog opened'));
+    await vi.waitFor(() => expect(mocks.download).toHaveBeenCalledWith({ url: 'blob:synthetic', filename: 'xfi-capture-0001.json', saveAs: true, conflictAction: 'uniquify' }));
     expect(mocks.sendMessage).toHaveBeenCalledWith(7, { type: 'XFI_EXPORT_CHUNK', exportId: 'export-1', index: 0 });
     expect(mocks.sendMessage).toHaveBeenCalledWith(7, { type: 'XFI_EXPORT_CHUNK', exportId: 'export-1', index: 1 });
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));

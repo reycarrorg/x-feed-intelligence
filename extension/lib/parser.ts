@@ -27,7 +27,9 @@ export interface ParsedCard {
   handle: string | null;
   promotion: PromotionStatus;
   promotionEvidence: 'visible_label' | 'delayed_label' | 'layout_marker' | 'manual_review' | 'none';
-  media: Array<{ kind: 'image' | 'video' | 'animated_image' | 'link_card' | 'unknown'; altText: string | null }>;
+  media: Array<{ kind: 'image' | 'video' | 'animated_image' | 'link_card' | 'unknown'; altText: string | null; visibleDescription?: string | null }>;
+  quote: { id: string | null; permalink: string | null; displayName: string | null; handle: string | null; text: string | null; media: ParsedCard['media'] } | null;
+  outboundLinks: Array<{ url: string; title: string | null; description: string | null }>;
   uncertaintyCodes: string[];
   preview: ReturnType<typeof previewGrade>;
 }
@@ -63,9 +65,10 @@ export function visibleText(element: Element | null, root: Element): string | nu
   return chunks.join(' ').replace(/\s+/g, ' ').trim() || null;
 }
 
-export function statusIdentity(article: Element): { id: string | null; permalink: string | null } {
+export function statusIdentity(article: Element, excluded: Element | null = null): { id: string | null; permalink: string | null } {
   const candidates = article.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]');
   for (const anchor of candidates) {
+    if (excluded?.contains(anchor)) continue;
     const href = anchor.getAttribute('href') || '';
     let parsed: URL;
     try {
@@ -83,8 +86,8 @@ export function statusIdentity(article: Element): { id: string | null; permalink
   return { id: null, permalink: null };
 }
 
-export function parseAuthor(article: Element): { displayName: string | null; handle: string | null } {
-  const container = article.querySelector(SELECTORS.userName);
+export function parseAuthor(article: Element, excluded: Element | null = null): { displayName: string | null; handle: string | null } {
+  const container = Array.from(article.querySelectorAll(SELECTORS.userName)).find((element) => !excluded?.contains(element));
   if (!container) return { displayName: null, handle: null };
   const compact = (container.textContent || '').replace(/\s+/g, ' ').trim();
   const handleMatch = compact.match(/@([A-Za-z0-9_]{1,15})/);
@@ -97,9 +100,10 @@ export function parseAuthor(article: Element): { displayName: string | null; han
   return { displayName, handle };
 }
 
-function parsePromotion(article: Element): { status: PromotionStatus; evidence: ParsedCard['promotionEvidence'] } {
+function parsePromotion(article: Element, excluded: Element | null = null): { status: PromotionStatus; evidence: ParsedCard['promotionEvidence'] } {
   const labelCandidates = Array.from(article.querySelectorAll('[data-testid="placementTracking"], [aria-label], span'));
   for (const element of labelCandidates) {
+    if (excluded?.contains(element)) continue;
     if (!isElementVisible(element, article)) continue;
     const value = `${element.getAttribute('aria-label') || ''} ${element.textContent || ''}`.replace(/\s+/g, ' ').trim();
     if (/^(?:promoted|ad|sponsored)(?:\s|$)/i.test(value) || /\bpromoted by\b/i.test(value)) return { status: 'promoted', evidence: 'visible_label' };
@@ -107,11 +111,11 @@ function parsePromotion(article: Element): { status: PromotionStatus; evidence: 
   return { status: 'organic', evidence: 'none' };
 }
 
-function parseMedia(article: Element): ParsedCard['media'] {
+function parseMedia(article: Element, excluded: Element | null = null): ParsedCard['media'] {
   const media: ParsedCard['media'] = [];
   const seen = new Set<Element>();
   const push = (element: Element, kind: ParsedCard['media'][number]['kind']) => {
-    if (seen.has(element) || !isElementVisible(element, article)) return;
+    if (seen.has(element) || excluded?.contains(element) || !isElementVisible(element, article)) return;
     seen.add(element);
     const image = element instanceof HTMLImageElement ? element : element.querySelector('img');
     media.push({ kind, altText: image?.getAttribute('alt')?.trim() || null });
@@ -122,19 +126,57 @@ function parseMedia(article: Element): ParsedCard['media'] {
   return media.slice(0, 16);
 }
 
+function safeOutbound(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw, location.origin);
+    if (url.protocol !== 'https:' || url.username || url.password || ['x.com', 'twitter.com', 't.co'].includes(url.hostname)) return null;
+    url.hash = '';
+    return url.toString().slice(0, 2048);
+  } catch { return null; }
+}
+
+function parseOutboundLinks(article: Element, quote: Element | null): ParsedCard['outboundLinks'] {
+  const links: ParsedCard['outboundLinks'] = [];
+  const seen = new Set<string>();
+  article.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((anchor) => {
+    if (quote?.contains(anchor) || !isElementVisible(anchor, article)) return;
+    const url = safeOutbound(anchor.getAttribute('href'));
+    if (!url || seen.has(url) || links.length >= 16) return;
+    seen.add(url);
+    const card = anchor.closest('[data-testid="card.wrapper"]');
+    const title = card?.querySelector('[data-testid="cardTitle"]') || card?.querySelector('h2, h3');
+    const description = card?.querySelector('[data-testid="cardDescription"]');
+    links.push({ url, title: visibleText(title || null, article)?.slice(0, 512) || null,
+      description: visibleText(description || null, article)?.slice(0, 2048) || null });
+  });
+  return links;
+}
+
 export function parseCard(article: Element): ParsedCard {
-  const identity = statusIdentity(article);
-  const author = parseAuthor(article);
-  const textElements = article.querySelectorAll(SELECTORS.tweetText);
+  const quoteRoot = article.querySelector('[data-testid="quoteTweet"], [data-testid="quotedTweet"]');
+  const own = (selector: string): Element | null => Array.from(article.querySelectorAll(selector)).find((element) => !quoteRoot?.contains(element)) || null;
+  const identity = statusIdentity(article, quoteRoot);
+  const author = parseAuthor(article, quoteRoot);
+  const textElements = Array.from(article.querySelectorAll(SELECTORS.tweetText)).filter((element) => !quoteRoot?.contains(element));
   const text = visibleText(textElements[0] || null, article);
-  const timestamp = article.querySelector('time');
-  const promotion = parsePromotion(article);
+  const timestamp = own('time');
+  const promotion = parsePromotion(article, quoteRoot);
+  const quote = quoteRoot && isElementVisible(quoteRoot, article) ? {
+    ...statusIdentity(quoteRoot), ...parseAuthor(quoteRoot),
+    text: visibleText(quoteRoot.querySelector(SELECTORS.tweetText), article), media: parseMedia(quoteRoot),
+  } : null;
+  const outboundLinks = parseOutboundLinks(article, quoteRoot);
   const uncertaintyCodes: string[] = [];
   if (!identity.id) uncertaintyCodes.push('MISSING_PLATFORM_ID');
   if (!author.handle) uncertaintyCodes.push('MISSING_AUTHOR_HANDLE');
+  if (!text) uncertaintyCodes.push('EMPTY_VISIBLE_BODY');
   if (!text && !article.querySelector('img, video')) uncertaintyCodes.push('MISSING_VISIBLE_CONTENT');
-  if (textElements.length > 1) uncertaintyCodes.push('EMBEDDED_QUOTE_REVIEW_REQUIRED');
-  if (containsPromptInjection(text || '')) uncertaintyCodes.push('PROMPT_INJECTION');
+  if (quoteRoot && (!quote?.id || !quote?.handle || !quote?.text)) uncertaintyCodes.push('QUOTE_NEEDS_CONTEXT');
+  if (article.querySelector('[data-testid="card.wrapper"]') && !outboundLinks.length) uncertaintyCodes.push('LINK_DESTINATION_UNRESOLVED');
+  if (parseMedia(article, quoteRoot).some((item) => item.kind !== 'link_card' && (!item.altText || /^(?:image|photo|video|gif|media)$/i.test(item.altText)))) uncertaintyCodes.push('MEDIA_CONTEXT_REQUIRED');
+  if (text && /(?:…|\.\.\.)\s*$/.test(text)) uncertaintyCodes.push('POSSIBLY_TRUNCATED_TEXT');
+  if (containsPromptInjection(`${text || ''} ${quote?.text || ''}`)) uncertaintyCodes.push('PROMPT_INJECTION');
   return {
     platformPostId: identity.id,
     canonicalPermalink: identity.permalink,
@@ -143,7 +185,9 @@ export function parseCard(article: Element): ParsedCard {
     ...author,
     promotion: promotion.status,
     promotionEvidence: promotion.evidence,
-    media: parseMedia(article),
+    media: parseMedia(article, quoteRoot),
+    quote,
+    outboundLinks,
     uncertaintyCodes,
     preview: previewGrade(text, promotion.status === 'promoted'),
   };

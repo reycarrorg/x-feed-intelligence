@@ -113,6 +113,22 @@ class LiveEnvelopeTests(unittest.TestCase):
         self.assertEqual("B_PROMISING_VERIFY", analyses[0]["classification"])
         self.assertFalse(analyses[0]["recommendations"][0]["performed"])
 
+    def test_assisted_packet_quote_context_and_links_survive_validation(self):
+        envelope = live_envelope()
+        envelope["session"]["collection_mode"] = "assisted_scroll"
+        envelope["session"]["limits"] = {"max_candidates": 10_000, "max_duration_seconds": 28_800, "max_packet_bytes": 15_728_640}
+        observation = envelope["observations"][0]
+        observation["first_observed_at"] = "2030-01-02T03:04:30Z"
+        observation["last_observed_at"] = "2030-01-02T03:04:45Z"
+        observation["outbound_links"] = [{"url": "https://example.org/report", "title": "Report", "description": "Visible summary"}]
+        observation["quote_context"] = {"platform_post_id": "222", "canonical_permalink": "https://x.com/quoted/status/" + "222", "display_name": "Quoted", "handle": "quoted", "visible_text": "Visible quoted text", "media": []}
+        observation["authors"][0]["role"] = "quoting"
+        observation["relationships"] = [{"kind": "quotes", "source_local_post_id": observation["observation_id"] + "-quoted-source", "source_platform_post_id": "222", "confidence": 0.9, "provenance_ids": [observation["provenance"][0]["provenance_id"]]}]
+        envelope["content_digest"] = digest(envelope)
+        actual = load_and_validate_envelope(canonical_bytes(envelope), ROOT / "schemas")
+        self.assertEqual("Visible quoted text", actual["observations"][0]["quote_context"]["visible_text"])
+        self.assertEqual("https://example.org/report", actual["observations"][0]["outbound_links"][0]["url"])
+
     def test_legacy_live_packet_cannot_exceed_its_declared_100_card_limit(self):
         envelope = live_envelope()
         envelope["observations"] *= 101
@@ -171,14 +187,14 @@ class LiveEnvelopeTests(unittest.TestCase):
 
 
 class CapabilityBoundaryTests(unittest.TestCase):
-    def test_extension_source_has_no_automation_network_or_account_action_primitive(self):
+    def test_extension_source_has_no_network_or_account_action_primitive(self):
         sources = "\n".join(
             path.read_text(encoding="utf-8")
             for path in sorted((ROOT / "extension").rglob("*.ts"))
             if "node_modules" not in path.parts and ".output" not in path.parts and ".wxt" not in path.parts
         )
         forbidden = {
-            "automatic scroll call": r"\b(?:scrollBy|scrollTo|scrollIntoView)\s*\(",
+            "unbounded scroll call": r"\b(?:scrollTo|scrollIntoView)\s*\(",
             "direct scroll mutation": r"\.scrollTop\s*=",
             "network fetch": r"\bfetch\s*\(",
             "XHR": r"\bXMLHttpRequest\b",
@@ -190,7 +206,7 @@ class CapabilityBoundaryTests(unittest.TestCase):
         for label, pattern in forbidden.items():
             with self.subTest(label=label):
                 self.assertIsNone(re.search(pattern, sources, flags=re.IGNORECASE))
-        self.assertIn("autoScroll: false", sources)
+        self.assertIn("Math.min(120", sources)
         self.assertIn("networkRequests: 0", sources)
         self.assertIn("accountActions: 0", sources)
 
@@ -199,9 +215,9 @@ class CapabilityBoundaryTests(unittest.TestCase):
         collector = (ROOT / "extension" / "entrypoints" / "collector.content.ts").read_text(encoding="utf-8")
         self.assertIn("optional_host_permissions: ['https://x.com/*']", config)
         self.assertIsNone(re.search(r"^\s*host_permissions\s*:", config, flags=re.MULTILINE))
-        self.assertIsNone(re.search(r"^\s*permissions\s*:", config, flags=re.MULTILINE))
+        self.assertIn("permissions: ['downloads', 'storage']", config)
         self.assertIn("matches: ['https://x.com/*']", collector)
-        self.assertIn("collection_mode: 'manual_scroll'", collector)
+        self.assertIn("'assisted_scroll' : 'manual_scroll'", collector)
 
 
 if __name__ == "__main__":

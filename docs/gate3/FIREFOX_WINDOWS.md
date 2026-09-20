@@ -1,5 +1,7 @@
 # Windows Firefox development run
 
+> Historical Gate 3 test instructions. The 0.5.0 candidate uses only the extension action popup; the former sidebar instructions below do not apply to it. The new build has not yet been loaded in the user's Firefox client.
+
 This is a local Gate 3 review build, not a signed Firefox release or a completed
 live-X acceptance test. It does not require Chrome or Brave. Firefox 140 or
 newer is required on desktop; the checked Windows PC has Firefox 156.

@@ -53,6 +53,39 @@ describe('visible X card parser', () => {
     expect(parsed.preview.grade).toBe('F');
   });
 
+  it('keeps visible quote identity and text separate from the quoting post', () => {
+    document.body.innerHTML = `<article data-testid="tweet">
+      <div data-testid="User-Name">Commenter @commenter</div>
+      <a href="/commenter/status/111"><time>now</time></a>
+      <div data-testid="tweetText">This needs checking.</div>
+      <div data-testid="quoteTweet">
+        <div data-testid="User-Name">Original @original</div>
+        <a href="/original/status/222"><time>earlier</time></a>
+        <div data-testid="tweetText">Quoted source claim.</div>
+      </div></article>`;
+    const article = document.querySelector('article')!;
+    markVisible(article);
+    const parsed = parseCard(article);
+    expect(parsed.platformPostId).toBe('111');
+    expect(parsed.visibleText).toBe('This needs checking.');
+    expect(parsed.quote).toMatchObject({ id: '222', handle: 'original', text: 'Quoted source claim.' });
+    expect(parsed.uncertaintyCodes).not.toContain('QUOTE_NEEDS_CONTEXT');
+  });
+
+  it('captures an inspectable link destination and marks empty generic media context', () => {
+    document.body.innerHTML = `<article data-testid="tweet">
+      <div data-testid="User-Name">Author @author</div><a href="/author/status/333"><time>now</time></a>
+      <div data-testid="tweetPhoto"><img alt="Image" /></div>
+      <div data-testid="card.wrapper"><a href="https://example.org/report"><h2>Report title</h2><p data-testid="cardDescription">Summary.</p></a></div>
+    </article>`;
+    const article = document.querySelector('article')!;
+    markVisible(article);
+    const parsed = parseCard(article);
+    expect(parsed.outboundLinks).toEqual([{ url: 'https://example.org/report', title: 'Report title', description: 'Summary.' }]);
+    expect(parsed.uncertaintyCodes).toContain('EMPTY_VISIBLE_BODY');
+    expect(parsed.uncertaintyCodes).toContain('MEDIA_CONTEXT_REQUIRED');
+  });
+
   it('does not accept unrelated or malformed status links as a post identity', () => {
     document.body.innerHTML = '<article><a href="https://evil.invalid/user/status/123">link</a></article>';
     expect(statusIdentity(document.querySelector('article')!)).toEqual({ id: null, permalink: null });

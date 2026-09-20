@@ -86,6 +86,12 @@ def relationship_target_ids(observations: list[dict]) -> dict[str, str]:
         observation["platform_post_id"]: local_post_id("platform_id", observation["platform_post_id"])
         for observation in observations if observation.get("platform_post_id")
     }
+    # A visible quoted card is an inspectable relationship target even when it
+    # never appears as a separate top-level feed observation.
+    for observation in observations:
+        quote_id = (observation.get("quote_context") or {}).get("platform_post_id")
+        if quote_id:
+            platform_targets[quote_id] = local_post_id("platform_id", quote_id)
     generated_ids = {local_post_id(*observation_key(observation)) for observation in observations}
     for observation in observations:
         for relationship in observation["relationships"]:

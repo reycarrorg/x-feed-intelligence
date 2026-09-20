@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { CollectorCommand, CollectorResponse, CollectorStatus, LifecycleState } from '../../lib/contracts';
+import { reconcileOwnedExports, startOwnedExport } from '../../lib/export-retention';
 
 const EXACT_PATTERN = 'https://x.com/*';
 
@@ -12,11 +13,12 @@ const elements = {
   ambiguous: document.querySelector<HTMLElement>('#ambiguous')!,
   arm: document.querySelector<HTMLButtonElement>('#arm')!,
   start: document.querySelector<HTMLButtonElement>('#start')!,
+  scrollStart: document.querySelector<HTMLButtonElement>('#scroll-start')!,
+  scrollStop: document.querySelector<HTMLButtonElement>('#scroll-stop')!,
   stop: document.querySelector<HTMLButtonElement>('#stop')!,
   export: document.querySelector<HTMLButtonElement>('#export')!,
   discard: document.querySelector<HTMLButtonElement>('#discard')!,
   revoke: document.querySelector<HTMLButtonElement>('#revoke')!,
-  sidebar: document.querySelector<HTMLButtonElement>('#sidebar')!,
 };
 
 let activeTab: { id: number } | null = null;
@@ -26,17 +28,14 @@ let latestStatus: CollectorStatus | null = null;
 let exporting = false;
 let refreshing = false;
 let lastRefreshDescription = '';
-const firefoxSidebar = (browser as typeof browser & { sidebarAction?: { open: () => Promise<void>; isOpen: (details: Record<string, never>) => Promise<boolean> } }).sidebarAction;
-
-elements.sidebar.hidden = !firefoxSidebar;
-if (firefoxSidebar) void firefoxSidebar.isOpen({}).then((open) => { elements.sidebar.hidden = open; }).catch(() => { elements.sidebar.hidden = false; });
+const exportUrls = new Map<number, string>();
 
 function setMessage(value: string): void {
   elements.message.textContent = value;
 }
 
 function emptyStatus(state: LifecycleState = permissionGranted ? 'ARMED' : 'INACTIVE'): CollectorStatus {
-  return { state, observationCount: 0, organicCount: 0, promotedCount: 0, ambiguousCount: 0, hardStopCode: null, startedAt: null, elapsedSeconds: 0, autoScroll: false, networkRequests: 0, accountActions: 0 };
+  return { state, observationCount: 0, organicCount: 0, promotedCount: 0, ambiguousCount: 0, hardStopCode: null, startedAt: null, elapsedSeconds: 0, autoScroll: false, scrollPauseReason: null, networkRequests: 0, accountActions: 0 };
 }
 
 function render(status: CollectorStatus): void {
@@ -52,6 +51,8 @@ function render(status: CollectorStatus): void {
   elements.arm.disabled = !activeTab;
   elements.start.disabled = !confirmedXTab || !permissionGranted || !['ARMED', 'STOPPED'].includes(status.state);
   elements.stop.disabled = status.state !== 'CAPTURING' && status.state !== 'PAUSED_HIDDEN';
+  elements.scrollStart.disabled = status.state !== 'CAPTURING' || status.autoScroll;
+  elements.scrollStop.disabled = !status.autoScroll;
   elements.export.disabled = exporting || status.observationCount === 0;
   elements.discard.disabled = status.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(status.state);
   elements.revoke.disabled = !permissionGranted || ['CAPTURING', 'PAUSED_HIDDEN'].includes(status.state);
@@ -70,8 +71,7 @@ async function refresh(): Promise<void> {
   if (refreshing) return;
   refreshing = true;
   try {
-    // A Firefox sidebar belongs to its own browser window. Chromium can expose
-    // an action popup as the current window; fall back to the last normal one.
+    // An action popup can be its own browser window; fall back to the last normal one.
     const currentWindow = await browser.windows.getCurrent();
     const window = currentWindow.type === 'normal' ? currentWindow : await browser.windows.getLastFocused({ windowTypes: ['normal'] });
     const tabs = window.id == null ? [] : await browser.tabs.query({ active: true, windowId: window.id });
@@ -94,7 +94,7 @@ async function refresh(): Promise<void> {
       if (!response.ok || !response.status) throw new Error('COLLECTOR_NOT_LOADED');
       confirmedXTab = true;
       render(response.status);
-      describe(response.status.hardStopCode ? `Stopped safely: ${response.status.hardStopCode}` : response.status.state === 'CAPTURING' ? 'Capturing visible cards while you scroll normally.' : 'Ready. Collection starts only when you press Start.');
+      describe(response.status.hardStopCode ? `Stopped safely: ${response.status.hardStopCode}` : response.status.autoScroll ? 'Careful auto-scroll is running while visible cards are captured.' : response.status.state === 'CAPTURING' ? 'Capturing visible cards; scroll manually or opt in to careful auto-scroll.' : 'Ready. Collection starts only when you press Start.');
     } catch {
       render(emptyStatus('INACTIVE'));
       describe('No X collector is loaded in the active tab. Open or reload https://x.com; XFI will reconnect.');
@@ -114,11 +114,6 @@ function describe(value: string): void {
   }
 }
 
-elements.sidebar.addEventListener('click', () => {
-  // Firefox requires this call directly in the user-gesture handler.
-  void firefoxSidebar?.open().catch(() => setMessage('Firefox could not open the sidebar. Use View > Sidebar > X Feed Intelligence.'));
-});
-
 elements.arm.addEventListener('click', async () => {
   permissionGranted = await browser.permissions.request({ origins: [EXACT_PATTERN] });
   render(emptyStatus(permissionGranted ? 'ARMED' : 'INACTIVE'));
@@ -133,6 +128,17 @@ elements.start.addEventListener('click', async () => {
   } catch {
     setMessage('Reload this X tab once so the reviewed collector can load, then try again.');
   }
+});
+
+elements.scrollStart.addEventListener('click', async () => {
+  try { const response = await send({ type: 'XFI_SCROLL_START' }); render(response.status);
+    setMessage(response.ok ? 'Careful auto-scroll started. It stops on hidden tab, challenge, limits, or no progress.' : `Auto-scroll blocked: ${response.error || 'unknown error'}`);
+  } catch { setMessage('Return to the collection tab before starting auto-scroll.'); }
+});
+
+elements.scrollStop.addEventListener('click', async () => {
+  try { const response = await send({ type: 'XFI_SCROLL_STOP' }); render(response.status); setMessage('Auto-scroll stopped; visible capture may continue.'); }
+  catch { setMessage('Could not reach the collection tab.'); }
 });
 
 elements.stop.addEventListener('click', async () => {
@@ -170,12 +176,17 @@ elements.export.addEventListener('click', async () => {
     if (receivedBytes !== totalBytes) throw new Error('EXPORT_SIZE_MISMATCH');
     const blob = new Blob([...chunks, '\n'], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `xfi-${sessionId}.json`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    setMessage('Private JSON exported locally. It has not been uploaded or analyzed yet.');
+    let download: { id: number; sequence: number };
+    try {
+      download = await startOwnedExport(url);
+      exportUrls.set(download.id, url);
+    } catch (error) {
+      URL.revokeObjectURL(url);
+      throw error;
+    }
+    setMessage(`Save dialog opened for export ${sessionId}. Choose Documents. Older files are recycled only after a new tracked save completes.`);
+    window.setTimeout(() => { if (exportUrls.has(download.id)) { exportUrls.delete(download.id); URL.revokeObjectURL(url); } }, 600_000);
+    void reconcileOwnedExports().then(({ warning }) => { if (warning) setMessage(warning); });
   } catch (error) {
     setMessage(`Export blocked: ${error instanceof Error ? error.message : 'unknown error'}`);
   } finally {
@@ -205,5 +216,13 @@ elements.revoke.addEventListener('click', async () => {
 });
 
 void refresh();
+void reconcileOwnedExports().then(({ warning }) => { if (warning) setMessage(warning); }).catch(() => setMessage('Could not verify saved exports; no files were recycled.'));
+browser.downloads.onChanged.addListener((delta) => {
+  if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') {
+    const url = exportUrls.get(delta.id);
+    if (url) { URL.revokeObjectURL(url); exportUrls.delete(delta.id); }
+  }
+  void reconcileOwnedExports().then(({ warning }) => { if (warning) setMessage(warning); });
+});
 const refreshTimer = window.setInterval(() => void refresh(), 1000);
 window.addEventListener('pagehide', () => window.clearInterval(refreshTimer), { once: true });

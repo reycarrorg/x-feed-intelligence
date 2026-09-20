@@ -10,7 +10,7 @@ vi.mock('../lib/parser', () => ({
     platformPostId: article.dataset.postId || '10001', canonicalPermalink: `https://x.com/example/status/${article.dataset.postId || '10001'}`,
     handle: 'example', displayName: 'Example', displayedTimestamp: null,
     visibleText: `A further visible card. ${'Evidence '.repeat(70)}`, promotion: 'organic', promotionEvidence: 'none',
-    media: [], uncertaintyCodes: [], preview: { grade: 'B', reasons: ['synthetic'] },
+    media: [], quote: null, outboundLinks: [], uncertaintyCodes: [], preview: { grade: 'B', reasons: ['synthetic'] },
   }),
 }));
 
@@ -38,7 +38,7 @@ describe('large manual capture export', () => {
     expect(collector.status()).toMatchObject({ observationCount: 1, organicCount: 1, promotedCount: 0, ambiguousCount: 0 });
   });
 
-  it('accepts 10,000 distinct visible cards, chunks the export, and stops at the cap', async () => {
+  it('chunks a large export and stops at the 15 MiB cap before 10,000 cards', async () => {
     const { LiveCollector } = await import('../entrypoints/collector.content');
     const collector = new LiveCollector();
     const internal = collector as unknown as {
@@ -54,7 +54,9 @@ describe('large manual capture export', () => {
       article.dataset.postId = String(index + 1);
       internal.process(article);
     }
-    expect(collector.status()).toMatchObject({ state: 'LIMIT_REACHED', observationCount: 10_000, organicCount: 10_000, hardStopCode: 'QUEUE_LIMIT' });
+    expect(collector.status()).toMatchObject({ state: 'LIMIT_REACHED', hardStopCode: 'PACKET_LIMIT' });
+    expect(collector.status().observationCount).toBeGreaterThan(1000);
+    expect(collector.status().observationCount).toBeLessThan(10_000);
 
     const exported = await collector.exportPacket();
     expect(exported.ok).toBe(true);
@@ -65,12 +67,12 @@ describe('large manual capture export', () => {
     expect(chunks.every((chunk) => typeof chunk === 'string' && chunk.length <= 262_144)).toBe(true);
     const json = chunks.join('');
     expect(new TextEncoder().encode(json).length).toBe(exported.export?.totalBytes);
-    expect((JSON.parse(json) as { observations: unknown[] }).observations).toHaveLength(10_000);
+    expect((JSON.parse(json) as { observations: unknown[] }).observations).toHaveLength(collector.status().observationCount);
     expect(collector.releaseExport(exported.export!.id).ok).toBe(true);
     expect(collector.exportChunk(exported.export!.id, 0).ok).toBe(false);
 
     article.dataset.postId = '10001';
     internal.process(article);
-    expect(collector.status().observationCount).toBe(10_000);
+    expect(collector.status().observationCount).toBeLessThan(10_000);
   });
 });

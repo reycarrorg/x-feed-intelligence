@@ -1,12 +1,12 @@
-export const COLLECTOR_VERSION = 'hybrid-extension-0.4.0';
-export const PARSER_VERSION = 'visible-x-dom-0.3.0';
+export const COLLECTOR_VERSION = 'hybrid-extension-0.5.0';
+export const PARSER_VERSION = 'visible-x-dom-0.4.0';
 export const EXACT_ORIGIN = 'https://x.com';
 
 export const LIMITS = Object.freeze({
   minimumVisibilityRatio: 0.5,
   maxCandidates: 10_000,
   maxDurationSeconds: 28_800,
-  maxPacketBytes: 134_217_728,
+  maxPacketBytes: 15 * 1_048_576,
   maxEvents: 256,
   maxAmbiguityRatio: 0.05,
 });
@@ -31,7 +31,8 @@ export interface CollectorStatus {
   hardStopCode: string | null;
   startedAt: string | null;
   elapsedSeconds: number;
-  autoScroll: false;
+  autoScroll: boolean;
+  scrollPauseReason: string | null;
   networkRequests: 0;
   accountActions: 0;
 }
@@ -39,6 +40,8 @@ export interface CollectorStatus {
 export type CollectorCommand =
   | { type: 'XFI_STATUS' }
   | { type: 'XFI_START' }
+  | { type: 'XFI_SCROLL_START' }
+  | { type: 'XFI_SCROLL_STOP' }
   | { type: 'XFI_STOP' }
   | { type: 'XFI_EXPORT' }
   | { type: 'XFI_EXPORT_CHUNK'; exportId: string; index: number }
