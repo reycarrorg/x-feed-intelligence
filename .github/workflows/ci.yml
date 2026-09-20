@@ -46,12 +46,15 @@ jobs:
       - name: Install reviewed extension dependencies without lifecycle scripts
         working-directory: extension
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Compile, test, and build the review extension
+      - name: Compile, test, and build Chrome and Firefox review extensions
         working-directory: extension
         run: |
           pnpm run prepare:wxt
           pnpm run compile
           pnpm run test
           pnpm run build
-      - name: Verify generated manifest and prohibited capabilities
-        run: python3 tests/check_gate3_manifest.py
+          pnpm run build:firefox
+      - name: Verify both manifests and prohibited capabilities
+        run: |
+          python3 tests/check_gate3_manifest.py --browser chrome
+          python3 tests/check_gate3_manifest.py --browser firefox
