@@ -23,7 +23,11 @@ def package_files() -> list[Path]:
     paths = [ROOT / item for item in BASE_FILES]
     for pattern in GLOBS:
         paths.extend(ROOT.glob(pattern))
-    return sorted({path for path in paths if path.relative_to(ROOT).as_posix() not in EXCLUDED})
+    # WindowsPath ordering is case-insensitive; sort by portable archive names.
+    return sorted(
+        {path for path in paths if path.relative_to(ROOT).as_posix() not in EXCLUDED},
+        key=lambda path: path.relative_to(ROOT).as_posix(),
+    )
 
 
 def package_entries(paths: list[Path]) -> list[tuple[str, bytes, bool]]:
