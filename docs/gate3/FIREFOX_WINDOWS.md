@@ -15,6 +15,10 @@ double-click the launcher again to rebuild and relaunch it. The first launcher
 run may fetch this pinned test runner from npm; it is not shipped with the
 extension or the recording-only product package.
 
+If an older temporary XFI session is still open, export any unsaved capture
+before closing it. Rebuilding files on disk does not automatically reload that
+running add-on; launch a fresh temporary session to use version 0.4.0.
+
 The Firefox manifest has one optional site permission, `https://x.com/*`, and
 no always-on host permission, background worker, or network API permission.
 Firefox also displays a data-use disclosure because an explicit local JSON
@@ -23,6 +27,20 @@ posts. The extension does not transmit that packet to a server. The user must
 separately grant X access and press **Start** before collection. Do not log in
 to X, grant access, or begin a live collection just to verify installation;
 follow [the user-supervised protocol](USER_SUPERVISED_TEST.md) when ready.
+
+The popup has a **Keep open in Firefox sidebar** button. The sidebar remains
+beside the X tab while you scroll and refreshes its counts about once per
+second; it is not an OS-level always-on-top window. Capture stays in the X tab
+if you close the sidebar, but the counters reappear when you reopen it. The
+review build can accumulate up to 10,000 distinct cards that each become at
+least 50% visible, with an 8-hour and 128-MiB safety ceiling. Stop and export
+from the same X tab before reloading or closing it; a reload discards the
+in-memory session. Large JSON exports are transferred from the collector in
+bounded chunks and may take time. Export periodically during a long run if
+you want recoverable checkpoints; each export contains the session so far.
+The first live supervised test should still
+be small, as described in the protocol; 10,000-card live reliability is not
+yet proven.
 
 For a local rebuild and static check from `extension/`:
 

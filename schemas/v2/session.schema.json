@@ -16,14 +16,10 @@
     "privacy_profile": {"const": "default_local"},
     "collection_mode": {"const": "manual_scroll"},
     "limits": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["max_candidates", "max_duration_seconds", "max_packet_bytes"],
-      "properties": {
-        "max_candidates": {"const": 100},
-        "max_duration_seconds": {"const": 900},
-        "max_packet_bytes": {"const": 5242880}
-      }
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["max_candidates", "max_duration_seconds", "max_packet_bytes"], "properties": {"max_candidates": {"const": 100}, "max_duration_seconds": {"const": 900}, "max_packet_bytes": {"const": 5242880}}},
+        {"type": "object", "additionalProperties": false, "required": ["max_candidates", "max_duration_seconds", "max_packet_bytes"], "properties": {"max_candidates": {"const": 10000}, "max_duration_seconds": {"const": 28800}, "max_packet_bytes": {"const": 134217728}}}
+      ]
     }
   }
 }

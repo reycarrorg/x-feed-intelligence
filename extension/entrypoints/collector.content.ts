@@ -58,7 +58,7 @@ function challengeCode(): string | null {
   return null;
 }
 
-class LiveCollector {
+export class LiveCollector {
   private state: LifecycleState = 'ARMED';
   private observations: Observation[] = [];
   private events: Array<{ event_code: string; at: string; safe_detail_code: string | null }> = [];
@@ -75,6 +75,9 @@ class LiveCollector {
   private identityIndexes = new Map<string, number>();
   private nodeCounter = 0;
   private ambiguousCount = 0;
+  private promotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
+  private observationBytes = 0;
+  private exportSnapshot: { id: string; sessionId: string; json: string; chunks: Array<[number, number]> } | null = null;
   private indicator: HTMLElement | null = null;
 
   constructor() {
@@ -83,14 +86,13 @@ class LiveCollector {
   }
 
   status(): CollectorStatus {
-    const promotions = this.observations.map((item) => item.promotion.status);
     const now = this.stoppedAt ?? Date.now();
     return {
       state: this.state,
       observationCount: this.observations.length,
-      organicCount: promotions.filter((value) => value === 'organic').length,
-      promotedCount: promotions.filter((value) => value === 'promoted').length,
-      ambiguousCount: this.ambiguousCount + promotions.filter((value) => value === 'ambiguous').length,
+      organicCount: this.promotionCounts.organic,
+      promotedCount: this.promotionCounts.promoted,
+      ambiguousCount: this.ambiguousCount + this.promotionCounts.ambiguous,
       hardStopCode: this.stopCode,
       startedAt: this.startedAt === null ? null : new Date(this.startedAt).toISOString(),
       elapsedSeconds: this.startedAt === null ? 0 : Math.max(0, Math.floor((now - this.startedAt) / 1000)),
@@ -166,11 +168,38 @@ class LiveCollector {
       content_digest: '',
     };
     packet.content_digest = await contentDigest(packet);
-    if (byteLength(packet) > LIMITS.maxPacketBytes) {
+    const json = stableString(packet);
+    const totalBytes = new TextEncoder().encode(json).length;
+    if (totalBytes + 1 > LIMITS.maxPacketBytes) {
       this.limitStop('PACKET_LIMIT');
       return this.response(false, 'PACKET_LIMIT');
     }
-    return { ...this.response(true), packet };
+    const chunks: Array<[number, number]> = [];
+    for (let start = 0; start < json.length;) {
+      let end = Math.min(start + 262_144, json.length);
+      // Do not split a UTF-16 surrogate pair across separately encoded Blob parts.
+      if (end < json.length && /[\uD800-\uDBFF]/.test(json.charAt(end - 1))) end -= 1;
+      chunks.push([start, end]);
+      start = end;
+    }
+    const id = randomId('export');
+    this.exportSnapshot = { id, sessionId: this.sessionId, json, chunks };
+    return { ...this.response(true), export: { id, sessionId: this.sessionId, chunkCount: chunks.length, totalBytes } };
+  }
+
+  exportChunk(id: string, index: number): CollectorResponse {
+    const snapshot = this.exportSnapshot;
+    if (!snapshot || id !== snapshot.id || !Number.isInteger(index) || index < 0 || index >= snapshot.chunks.length) {
+      return this.response(false, 'INVALID_EXPORT_CHUNK');
+    }
+    const [start, end] = snapshot.chunks[index]!;
+    return { ...this.response(true), chunk: snapshot.json.slice(start, end) };
+  }
+
+  releaseExport(id: string): CollectorResponse {
+    if (this.exportSnapshot?.id !== id) return this.response(false, 'INVALID_EXPORT_ID');
+    this.exportSnapshot = null;
+    return this.response(true);
   }
 
   private response(ok: boolean, error?: string): CollectorResponse {
@@ -185,6 +214,9 @@ class LiveCollector {
     this.stoppedAt = null;
     this.stopCode = null;
     this.ambiguousCount = 0;
+    this.promotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
+    this.observationBytes = 0;
+    this.exportSnapshot = null;
     this.seenSignatures.clear();
     this.identityIndexes.clear();
     this.nodeKeys = new WeakMap();
@@ -267,6 +299,8 @@ class LiveCollector {
       const existing = this.observations[existingIndex];
       this.seenSignatures.set(node, signature);
       if (existing && existing.promotion.status !== parsed.promotion && existing.promotion.status !== 'ambiguous') {
+        const previousBytes = byteLength(existing);
+        this.promotionCounts[existing.promotion.status as keyof typeof this.promotionCounts] -= 1;
         existing.promotion = {
           status: 'ambiguous',
           evidence: Array.from(new Set([...existing.promotion.evidence, parsed.promotionEvidence, 'manual_review'])),
@@ -274,6 +308,8 @@ class LiveCollector {
         };
         const uncertainties = existing.uncertainty as Array<Record<string, unknown>>;
         uncertainties.push({ code: 'PROMOTION_STATE_CHANGED', field: 'promotion', severity: 'review', requires_review: true, safe_detail: 'The visible promotion state changed during this session.' });
+        this.promotionCounts.ambiguous += 1;
+        this.observationBytes += byteLength(existing) - previousBytes;
         this.event('OBSERVATION_UPDATED', 'PROMOTION_STATE_CHANGED');
         this.renderIndicator();
       }
@@ -351,16 +387,20 @@ class LiveCollector {
       preview_grade: parsed.preview.grade,
       preview_reasons: parsed.preview.reasons,
     };
-    const candidate = this.observations.concat([observation]);
-    if (byteLength({ observations: candidate }) > LIMITS.maxPacketBytes) return void this.limitStop('PACKET_LIMIT');
+    const nextBytes = this.observationBytes + byteLength(observation) + 1;
+    // Reserve 1 MiB for session metadata, bounded events, digest and edits.
+    if (nextBytes > LIMITS.maxPacketBytes - 1_048_576) return void this.limitStop('PACKET_LIMIT');
     this.seenSignatures.set(node, signature);
     this.observations.push(observation);
+    this.observationBytes = nextBytes;
+    this.promotionCounts[parsed.promotion] += 1;
     this.identityIndexes.set(identity, appearance);
     this.event('OBSERVATION_ACCEPTED', 'COUNT_ONLY');
     this.renderIndicator();
 
     if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) return void this.hardStop('INJECTION_CONTENT');
     if (this.ambiguousCount / this.observations.length > LIMITS.maxAmbiguityRatio && this.observations.length >= 20) return void this.hardStop('AMBIGUITY_LIMIT');
+    if (this.observations.length >= LIMITS.maxCandidates) this.limitStop('QUEUE_LIMIT');
   }
 
   private visibilityChanged(): void {
@@ -434,6 +474,8 @@ export default defineContentScript({
         case 'XFI_EXPORT':
           void collector.exportPacket().then(sendResponse, () => sendResponse({ ok: false, status: collector.status(), error: 'EXPORT_FAILED' }));
           return true;
+        case 'XFI_EXPORT_CHUNK': sendResponse(collector.exportChunk(command.exportId, command.index)); return undefined;
+        case 'XFI_EXPORT_RELEASE': sendResponse(collector.releaseExport(command.exportId)); return undefined;
         case 'XFI_DISCARD': sendResponse(collector.discard()); return undefined;
         default: return undefined;
       }

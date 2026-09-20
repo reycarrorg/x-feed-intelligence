@@ -16,7 +16,7 @@ This protocol defines full acceptance; the [September 16 limited Brave smoke tes
 2. Open an ordinary `https://x.com` feed page and grant the exact optional site permission.
 3. Reload once if the browser requires it. Confirm the collector says ARMED and has collected zero posts.
 4. Press Start. Scroll manually at an ordinary reading pace. Do not use automatic scrolling or another automation tool.
-5. Stop after at most 100 visible candidate cards or 15 minutes. Stop immediately on login, challenge, unusual-activity, rate-limit, permission drift, unexpected surface, or account warning.
+5. For the first supervised smoke test, stop after at most 100 visible candidate cards or 15 minutes, even though the new Firefox collector can hold up to 10,000 distinct visible cards for a longer manual session. Stop immediately on login, challenge, unusual-activity, rate-limit, permission drift, unexpected surface, or account warning.
 6. Export the private JSON once, validate it locally, and compare it with the screen recording if captured.
 7. Revoke X access and remove the unpacked extension after the test unless the user explicitly chooses to retain the reviewed build.
 

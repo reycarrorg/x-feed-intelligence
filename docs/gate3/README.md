@@ -13,7 +13,7 @@ The review build was locally installed in Brave and passed one bounded authentic
 - Collection observes top-level cards only after they reach at least 50% viewport visibility.
 - The user scrolls normally. There is no automatic scrolling.
 - The tab becoming hidden pauses collection.
-- The session stops at 100 visible cards, 15 minutes, 5 MiB, excessive ambiguity, login/challenge/rate-limit surfaces, or prompt-injection-like content.
+- The current review build stops at 10,000 distinct visible cards, 8 hours, 128 MiB, excessive ambiguity, login/challenge/rate-limit surfaces, or prompt-injection-like content. Older review packets with the 100-card/15-minute/5-MiB limits remain importable.
 - Export is a local JSON download. The extension does not upload, browse links, or analyze through a remote model.
 - Promoted cards are labeled and excluded by the downstream organic analysis.
 - Preview grades are conservative routing hints, not factual verdicts.

@@ -13,6 +13,7 @@ from .canonical import canonical_bytes, digest, relationship_target_ids
 from .errors import ValidationError
 
 MAX_PACKET_BYTES = 5_242_880
+MAX_LIVE_PACKET_BYTES = 134_217_728
 MAX_DEPTH = 64
 SUPPORTED_SCHEMA_VERSIONS = {"1.0.0": "v1", "2.0.0": "v2"}
 SENSITIVE_KEYS = re.compile(r"(?i)(authorization|auth[_-]?token|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|bearer|cookie|csrf|password|session[_-]?(?:token|storage)|local[_-]?storage|browser[_-]?profile|direct[_-]?messages?|notifications?|payment|har)")
@@ -101,11 +102,14 @@ def sensitive_category(value: object) -> str | None:
 class SchemaValidator:
     def __init__(self, schema_root: Path):
         self.schema_root = schema_root
+        self._schema_cache: dict[Path, dict] = {}
 
     def _load_ref(self, current: Path, reference: str) -> tuple[dict, Path]:
         name, _, fragment = reference.partition("#")
         path = current if not name else current.parent / name
-        target = json.loads(path.read_text(encoding="utf-8"))
+        if path not in self._schema_cache:
+            self._schema_cache[path] = json.loads(path.read_text(encoding="utf-8"))
+        target = self._schema_cache[path]
         if fragment:
             if not fragment.startswith("/"):
                 raise ValidationError()
@@ -185,9 +189,14 @@ class SchemaValidator:
 
 
 def load_and_validate_envelope(raw: bytes, schema_root: Path) -> dict:
-    if len(raw) > MAX_PACKET_BYTES:
+    if len(raw) > MAX_LIVE_PACKET_BYTES:
         raise ValidationError("REJECTED_PACKET_LIMIT")
-    value = strict_json_loads(raw)
+    try:
+        value = strict_json_loads(raw)
+    except ValidationError:
+        if len(raw) > MAX_PACKET_BYTES:
+            raise ValidationError("REJECTED_PACKET_LIMIT") from None
+        raise
     if nested_depth(value) > MAX_DEPTH:
         raise ValidationError("REJECTED_DEPTH")
     privacy = sensitive_category(value)
@@ -198,6 +207,8 @@ def load_and_validate_envelope(raw: bytes, schema_root: Path) -> dict:
     version = value["schema_version"]
     if version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValidationError("REJECTED_VERSION")
+    if len(raw) > (MAX_LIVE_PACKET_BYTES if version == "2.0.0" else MAX_PACKET_BYTES):
+        raise ValidationError("REJECTED_PACKET_LIMIT")
     version_directory = SUPPORTED_SCHEMA_VERSIONS[version]
     if schema_root.name in set(SUPPORTED_SCHEMA_VERSIONS.values()):
         selected_root = schema_root.parent / version_directory
@@ -208,6 +219,8 @@ def load_and_validate_envelope(raw: bytes, schema_root: Path) -> dict:
     if value["content_digest"] != digest(value):
         raise ValidationError("REJECTED_DIGEST")
     session = value["session"]
+    if len(value["observations"]) > session["limits"]["max_candidates"]:
+        raise ValidationError("REJECTED_COUNT_LIMIT")
     ids: set[str] = set()
     provenance: set[str] = set()
     for observation in value["observations"]:

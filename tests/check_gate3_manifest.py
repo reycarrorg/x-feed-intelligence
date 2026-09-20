@@ -21,6 +21,8 @@ if not MANIFEST.is_file():
 
 manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 errors: list[str] = []
+if manifest.get("version") != "0.4.0":
+    errors.append("extension version drift")
 
 if manifest.get("manifest_version") != 3:
     errors.append("manifest is not MV3")
@@ -33,6 +35,8 @@ if manifest.get("permissions"):
 if manifest.get("background"):
     errors.append("background execution is forbidden")
 if args.browser == "firefox":
+    if manifest.get("sidebar_action") != {"default_title": "X Feed Intelligence", "default_panel": "popup.html", "open_at_install": False}:
+        errors.append("Firefox persistent sidebar contract drift")
     gecko = manifest.get("browser_specific_settings", {}).get("gecko", {})
     if gecko.get("id") != "{3bca689a-468a-4cd7-aa08-d61a8a83ed39}":
         errors.append("Firefox extension ID drift")
@@ -43,7 +47,7 @@ if args.browser == "firefox":
     expected_data = ["websiteContent", "personallyIdentifyingInfo", "personalCommunications"]
     if gecko.get("data_collection_permissions") != {"required": expected_data}:
         errors.append("Firefox local-export data disclosure drift")
-elif manifest.get("browser_specific_settings"):
+elif manifest.get("browser_specific_settings") or manifest.get("sidebar_action"):
     errors.append("Firefox-only settings leaked into Chrome manifest")
 
 scripts = manifest.get("content_scripts", [])

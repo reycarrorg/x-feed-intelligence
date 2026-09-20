@@ -5,10 +5,15 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: 'X Feed Intelligence',
     short_name: 'XFI',
-    version: '0.3.0',
+    version: '0.4.0',
     description: 'Explicitly capture only visible X posts while you scroll, then export them for local analysis.',
     optional_host_permissions: ['https://x.com/*'],
     ...(browser === 'firefox' ? {
+      sidebar_action: {
+        default_title: 'X Feed Intelligence',
+        default_panel: 'popup.html',
+        open_at_install: false,
+      },
       browser_specific_settings: {
         gecko: {
           id: '{3bca689a-468a-4cd7-aa08-d61a8a83ed39}',

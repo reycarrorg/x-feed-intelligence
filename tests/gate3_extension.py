@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from xfi.analysis import analyze_posts
 from xfi.canonical import canonical_bytes, digest
+from xfi.cli import load_envelope
 from xfi.errors import ValidationError
 from xfi.store import Store
 from xfi.validation import load_and_validate_envelope
@@ -112,6 +113,14 @@ class LiveEnvelopeTests(unittest.TestCase):
         self.assertEqual("B_PROMISING_VERIFY", analyses[0]["classification"])
         self.assertFalse(analyses[0]["recommendations"][0]["performed"])
 
+    def test_legacy_live_packet_cannot_exceed_its_declared_100_card_limit(self):
+        envelope = live_envelope()
+        envelope["observations"] *= 101
+        envelope["content_digest"] = digest(envelope)
+        with self.assertRaises(ValidationError) as over_limit:
+            load_and_validate_envelope(canonical_bytes(envelope), ROOT / "schemas")
+        self.assertEqual("REJECTED_COUNT_LIMIT", over_limit.exception.code)
+
     def test_automatic_collection_modes_and_broader_origins_reject(self):
         for mutation in ("mode", "origin", "visibility"):
             value = copy.deepcopy(live_envelope())
@@ -124,6 +133,41 @@ class LiveEnvelopeTests(unittest.TestCase):
             value["content_digest"] = digest(value)
             with self.subTest(mutation=mutation), self.assertRaises(ValidationError):
                 load_and_validate_envelope(canonical_bytes(value), ROOT / "schemas")
+
+    def test_ten_thousand_visible_cards_validate_and_import_but_next_card_rejects(self):
+        envelope = live_envelope()
+        envelope["session"]["limits"] = {
+            "max_candidates": 10_000,
+            "max_duration_seconds": 28_800,
+            "max_packet_bytes": 134_217_728,
+        }
+        template = envelope["observations"][0]
+        observations = []
+        for index in range(10_000):
+            item = copy.deepcopy(template)
+            item["observation_id"] = f"live-dom-test-001-observation-{index:05d}"
+            item["appearance_index"] = index
+            item["platform_post_id"] = str(1234567890123456789 + index)
+            item["canonical_permalink"] = f"https://x.com/example/status/{item['platform_post_id']}"
+            item["provenance"][0]["provenance_id"] = f"live-dom-test-001-provenance-{index:05d}"
+            item["visible_text"] = f"Synthetic visible card {index}. " + ("Measured documentation and limitations. " * 15)
+            observations.append(item)
+        envelope["observations"] = observations
+        envelope["content_digest"] = digest(envelope)
+        raw = canonical_bytes(envelope)
+        self.assertGreater(len(raw), 5_242_880)
+        with tempfile.TemporaryDirectory() as temporary:
+            packet = Path(temporary) / "synthetic-volume.json"
+            packet.write_bytes(raw)
+            actual = load_envelope(packet)
+            with Store(Path(temporary) / "private.sqlite") as store:
+                result = store.import_envelope(actual)
+        self.assertEqual(10_000, result.canonical_count)
+
+        envelope["observations"].append(copy.deepcopy(observations[-1]))
+        with self.assertRaises(ValidationError) as over_limit:
+            load_and_validate_envelope(canonical_bytes(envelope), ROOT / "schemas")
+        self.assertEqual("REJECTED_COUNT_LIMIT", over_limit.exception.code)
 
 
 class CapabilityBoundaryTests(unittest.TestCase):

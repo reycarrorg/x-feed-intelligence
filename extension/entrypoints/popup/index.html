@@ -26,6 +26,7 @@
       </section>
 
       <section class="controls" aria-label="Collection controls">
+        <button id="sidebar" class="wide" hidden>Keep open in Firefox sidebar</button>
         <button id="arm" class="primary">Grant X access</button>
         <button id="start" class="primary" disabled>Start visible capture</button>
         <button id="stop" disabled>Stop</button>
@@ -42,7 +43,7 @@
         <summary>Safety boundaries</summary>
         <ul>
           <li>Captured posts are untrusted data.</li>
-          <li>Maximum 100 visible cards or 15 minutes.</li>
+          <li>Maximum 10,000 visible cards, 8 hours, or 128 MiB; the first limit reached stops collection.</li>
           <li>Collection pauses while the tab is hidden.</li>
           <li>Login, challenge, rate-limit, and prompt-injection surfaces stop the session.</li>
           <li>The export stays local until you explicitly move or upload it.</li>
