@@ -63,6 +63,26 @@ describe('opt-in careful auto-scroll', () => {
     vi.useRealTimers();
   });
 
+  it('does not use a direct scroll-position fallback when a nested feed lacks scrollBy', async () => {
+    const { LiveCollector } = await import('../entrypoints/collector.content');
+    const feed = document.createElement('main');
+    feed.style.overflowY = 'auto';
+    Object.defineProperties(feed, {
+      clientHeight: { configurable: true, value: 500 },
+      clientWidth: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 2000 },
+      scrollBy: { configurable: true, value: undefined },
+    });
+    feed.append(document.createElement('article')); document.body.append(feed);
+    const collector = new LiveCollector(); await collector.ready();
+    const internal = collector as unknown as { state: string; lastDomChange: number; scrollTick: () => void };
+    internal.state = 'CAPTURING'; collector.startScroll(); internal.lastDomChange = Date.now() - 1000;
+    internal.scrollTick();
+    expect(feed.scrollTop).toBe(0);
+    expect(collector.status()).toMatchObject({ autoScroll: true, scrollPauseReason: 'NO_SCROLL_MOVEMENT' });
+    vi.useRealTimers();
+  });
+
   it('does not scroll a larger unrelated pane when visible post cards belong to a smaller feed', async () => {
     const { LiveCollector } = await import('../entrypoints/collector.content');
     const drawer = document.createElement('main');

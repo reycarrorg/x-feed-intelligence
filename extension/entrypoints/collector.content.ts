@@ -378,8 +378,13 @@ export class LiveCollector {
     if (target) {
       const oldTop = target.scrollTop;
       if (oldTop + target.clientHeight >= target.scrollHeight - 2) return void this.limitStop('AUTO_SCROLL_END_OF_FEED');
-      if (typeof target.scrollBy === 'function') target.scrollBy({ top: step, behavior: 'instant' });
-      else target.scrollTop = Math.min(target.scrollHeight - target.clientHeight, oldTop + step);
+      if (typeof target.scrollBy !== 'function') {
+        this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
+        this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+        this.scheduleScroll();
+        return;
+      }
+      target.scrollBy({ top: step, behavior: 'instant' });
       if (target.scrollTop <= oldTop) {
         this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
         this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
