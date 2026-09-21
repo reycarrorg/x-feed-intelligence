@@ -16,6 +16,14 @@ beforeEach(() => {
   mocks.sendMessage.mockReset();
 });
 
+function refreshPausedSnapshot() {
+  return { revision: 8, state: 'PAUSED_HIDDEN',
+    observations: [{ observation_id: 'session-observation-000', platform_post_id: '42', canonical_permalink: 'https://x.com/example/status/42', authors: [{ handle: 'example' }], displayed_timestamp: 'now', visible_text: 'same visible post', promotion: { status: 'organic' }, outbound_links: [], quote_context: null, media: [], uncertainty: [], provenance: [{ provenance_id: 'p' }], relationships: [] }],
+    events: [{ event_code: 'PAUSED_DOCUMENT_HIDDEN', at: '2026-09-21T00:00:00.000Z', safe_detail_code: null }], sessionId: 'session', startedAt: Date.now() - 1000, stoppedAt: null, stopCode: null,
+    ambiguousCount: 0, promotionCounts: { organic: 1, promoted: 0, ambiguous: 0 }, observationBytes: 100,
+    assistedEver: true, scrollPauseReason: null };
+}
+
 describe('page-refresh reconnect', () => {
   it('restores a live tab snapshot, reattaches capture, keeps the count, and never resumes auto-scroll', async () => {
     const snapshot = { revision: 7,
@@ -36,6 +44,27 @@ describe('page-refresh reconnect', () => {
     internal.process(replacement);
     expect(collector.status().observationCount).toBe(1);
     expect(mocks.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'XFI_SESSION_WRITE' }));
+  });
+
+  it('reconnects a refresh-paused snapshot when the new document is already visible', async () => {
+    const snapshot = refreshPausedSnapshot();
+    mocks.sendMessage.mockImplementation(async (message: { type: string }) => message.type === 'XFI_SESSION_READ' ? { snapshot } : { ok: true });
+    const { LiveCollector } = await import('../entrypoints/collector.content');
+    const collector = new LiveCollector();
+    await collector.ready();
+    expect(collector.status()).toMatchObject({ state: 'CAPTURING', observationCount: 1, autoScroll: false, scrollPauseReason: 'PAGE_RELOADED' });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'XFI_SESSION_WRITE' }));
+  });
+
+  it('keeps a refresh-paused snapshot paused while the new document is hidden', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    const snapshot = refreshPausedSnapshot();
+    mocks.sendMessage.mockImplementation(async (message: { type: string }) => message.type === 'XFI_SESSION_READ' ? { snapshot } : { ok: true });
+    const { LiveCollector } = await import('../entrypoints/collector.content');
+    const collector = new LiveCollector();
+    await collector.ready();
+    expect(collector.status()).toMatchObject({ state: 'PAUSED_HIDDEN', observationCount: 1, autoScroll: false });
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it('restores a blocked snapshot for export but never resumes capture', async () => {

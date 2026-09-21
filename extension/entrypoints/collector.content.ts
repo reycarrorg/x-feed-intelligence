@@ -143,7 +143,13 @@ export class LiveCollector {
       });
       // Auto-scroll never resumes itself after a navigation. The user must opt in again.
       this.autoScroll = false;
-      if (this.state === 'CAPTURING') {
+      // Refreshing an active page hides the old document before it unloads. If
+      // that pause was committed, the new visible document must reconnect it;
+      // an initially hidden document remains paused until it becomes visible.
+      const resumeAfterRefresh = this.state === 'CAPTURING' ||
+        (this.state === 'PAUSED_HIDDEN' && document.visibilityState === 'visible');
+      if (resumeAfterRefresh) {
+        this.state = 'CAPTURING';
         this.scrollPauseReason = 'PAGE_RELOADED';
         this.event('RECONNECTED_AFTER_PAGE_RELOAD');
         this.attach();
