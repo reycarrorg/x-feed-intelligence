@@ -15,6 +15,7 @@ const elements = {
   start: document.querySelector<HTMLButtonElement>('#start')!,
   scrollStart: document.querySelector<HTMLButtonElement>('#scroll-start')!,
   scrollStop: document.querySelector<HTMLButtonElement>('#scroll-stop')!,
+  panel: document.querySelector<HTMLButtonElement>('#panel')!,
   stop: document.querySelector<HTMLButtonElement>('#stop')!,
   export: document.querySelector<HTMLButtonElement>('#export')!,
   discard: document.querySelector<HTMLButtonElement>('#discard')!,
@@ -53,6 +54,7 @@ function render(status: CollectorStatus): void {
   elements.stop.disabled = activeState !== 'CAPTURING' && activeState !== 'PAUSED_HIDDEN';
   elements.scrollStart.disabled = activeState !== 'CAPTURING' || status.autoScroll;
   elements.scrollStop.disabled = !status.autoScroll;
+  elements.panel.disabled = !confirmedXTab || !permissionGranted;
   elements.export.disabled = exporting || status.observationCount === 0;
   elements.discard.disabled = status.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(activeState);
   elements.revoke.disabled = !permissionGranted || ['CAPTURING', 'PAUSED_HIDDEN'].includes(activeState);
@@ -139,6 +141,14 @@ elements.scrollStart.addEventListener('click', async () => {
 elements.scrollStop.addEventListener('click', async () => {
   try { const response = await send({ type: 'XFI_SCROLL_STOP' }); render(response.status); setMessage('Auto-scroll stopped; visible capture may continue.'); }
   catch { setMessage('Could not reach the collection tab.'); }
+});
+
+elements.panel.addEventListener('click', async () => {
+  try {
+    const response = await send({ type: 'XFI_PANEL_TOGGLE' });
+    render(response.status);
+    setMessage(response.panelOpen ? 'Controls are now on this X page. Press Escape or Close panel to hide them.' : 'In-page controls closed.');
+  } catch { setMessage('Reload this X tab once so the reviewed collector can load, then try again.'); }
 });
 
 elements.stop.addEventListener('click', async () => {

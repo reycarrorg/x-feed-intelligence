@@ -73,12 +73,14 @@ export type CollectorCommand =
   | { type: 'XFI_EXPORT' }
   | { type: 'XFI_EXPORT_CHUNK'; exportId: string; index: number }
   | { type: 'XFI_EXPORT_RELEASE'; exportId: string }
-  | { type: 'XFI_DISCARD' };
+  | { type: 'XFI_DISCARD' }
+  | { type: 'XFI_PANEL_TOGGLE' };
 
 export interface CollectorResponse {
   ok: boolean;
   status: CollectorStatus;
   export?: { id: string; sessionId: string; chunkCount: number; totalBytes: number };
   chunk?: string;
+  panelOpen?: boolean;
   error?: string;
 }

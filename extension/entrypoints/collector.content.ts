@@ -804,6 +804,87 @@ export class LiveCollector {
 
 }
 
+class FloatingPanel {
+  private readonly host = document.createElement('div');
+  private readonly status = document.createElement('p');
+  private readonly buttons = new Map<string, HTMLButtonElement>();
+  private timer: number | null = null;
+  private drag: { x: number; y: number; left: number; top: number } | null = null;
+
+  constructor(private readonly collector: LiveCollector, private readonly onClose: () => void) {
+    this.host.id = 'xfi-floating-panel-host';
+    this.host.setAttribute('data-xfi-panel', '');
+    const style = document.createElement('style');
+    style.textContent = `
+      #xfi-floating-panel-host { all: initial; } #xfi-floating-panel-host .xfi-panel { position: fixed; z-index: 2147483647; top: 76px; right: 20px; width: 286px; color: #e5edf9; background: #0b1220; border: 1px solid #3b4b65; border-radius: 12px; box-shadow: 0 12px 34px #0008; font: 13px/1.35 system-ui, sans-serif; }
+      #xfi-floating-panel-host header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #263247; cursor: move; user-select: none; } #xfi-floating-panel-host h2 { flex: 1; margin: 0; font-size: 14px; } #xfi-floating-panel-host p { margin: 0; } #xfi-floating-panel-host .status { padding: 9px 12px; color: #b8c5d9; } #xfi-floating-panel-host .counts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0 12px 10px; } #xfi-floating-panel-host .counts span { padding: 7px; border-radius: 7px; background: #172033; } #xfi-floating-panel-host .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 0 12px 12px; } #xfi-floating-panel-host button { min-height: 34px; color: #e5edf9; border: 1px solid #3b4b65; border-radius: 7px; background: #172033; font: 650 12px/1.2 inherit; cursor: pointer; } #xfi-floating-panel-host button:hover:not(:disabled) { border-color: #7dd3fc; } #xfi-floating-panel-host button:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; } #xfi-floating-panel-host button:disabled { opacity: .45; cursor: default; } #xfi-floating-panel-host .wide { grid-column: 1 / -1; } #xfi-floating-panel-host .danger { color: #fecaca; border-color: #7f1d1d; } #xfi-floating-panel-host .close { min-height: 27px; min-width: 27px; padding: 0; background: transparent; }
+    `;
+    const panel = document.createElement('section');
+    panel.className = 'panel'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'X Feed Intelligence controls'); panel.tabIndex = -1;
+    const header = document.createElement('header');
+    const title = document.createElement('h2'); title.textContent = 'X Feed Intelligence';
+    const close = this.button('close', 'Close panel', () => this.close()); close.className = 'close'; close.setAttribute('aria-label', 'Close X Feed Intelligence controls');
+    header.append(title, close);
+    this.status.className = 'status'; this.status.setAttribute('role', 'status'); this.status.setAttribute('aria-live', 'polite');
+    const counts = document.createElement('div'); counts.className = 'counts'; counts.setAttribute('aria-label', 'Collection counts');
+    for (const label of ['visible cards', 'organic', 'promoted', 'review']) { const item = document.createElement('span'); item.dataset.count = label; counts.append(item); }
+    const controls = document.createElement('div'); controls.className = 'controls'; controls.setAttribute('aria-label', 'Collection controls');
+    controls.append(
+      this.button('start', 'Start visible capture', async () => this.run(() => this.collector.start())),
+      this.button('stop', 'Stop', async () => this.run(() => this.collector.stop())),
+      this.button('scroll-start', 'Start careful auto-scroll', () => this.run(() => this.collector.startScroll())),
+      this.button('scroll-stop', 'Stop auto-scroll', () => this.run(() => this.collector.stopScroll())),
+      this.button('export', 'Export private JSON', () => this.export(), 'wide'),
+      this.button('discard', 'Discard session', async () => this.run(() => this.collector.discard()), 'wide danger'),
+    );
+    panel.append(header, this.status, counts, controls); this.host.append(style, panel); document.documentElement.append(this.host);
+    header.addEventListener('pointerdown', (event) => this.beginDrag(event, panel));
+    panel.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); this.close(); } });
+    this.refresh(); this.timer = window.setInterval(() => this.refresh(), 1000); panel.focus();
+  }
+
+  private button(id: string, label: string, action: () => void | Promise<void>, className = ''): HTMLButtonElement {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.className = className; button.addEventListener('click', () => void action()); this.buttons.set(id, button); return button;
+  }
+
+  private async run(action: () => CollectorResponse | Promise<CollectorResponse>): Promise<void> {
+    const response = await action(); this.status.textContent = response.ok ? 'Updated.' : `Action blocked: ${response.error || 'unknown error'}`; this.refresh();
+  }
+
+  private async export(): Promise<void> {
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_PANEL_SAVE_EXPORT' }) as { ok?: boolean; sessionId?: string; error?: string };
+      this.status.textContent = reply?.ok ? `Save dialog opened for ${reply.sessionId}. Choose Documents.` : `Export blocked: ${reply?.error || 'unknown error'}`;
+    } catch { this.status.textContent = 'Export blocked: background unavailable.'; }
+    this.refresh();
+  }
+
+  private refresh(): void {
+    const snapshot = this.collector.status();
+    const values = [snapshot.observationCount, snapshot.organicCount, snapshot.promotedCount, snapshot.ambiguousCount];
+    const nodes = (this.status.parentElement?.querySelectorAll<HTMLElement>('[data-count]') || []);
+    nodes.forEach((node, index) => { node.textContent = `${values[index]} ${node.dataset.count}`; });
+    if (!this.status.textContent || this.status.textContent === 'Updated.') this.status.textContent = `${snapshot.state.replace('_', ' ')} · ${snapshot.autoScroll ? 'careful auto-scroll on' : 'manual scroll'}`;
+    this.buttons.get('start')!.disabled = !['ARMED', 'STOPPED'].includes(snapshot.pendingState || snapshot.state);
+    this.buttons.get('stop')!.disabled = !['CAPTURING', 'PAUSED_HIDDEN'].includes(snapshot.pendingState || snapshot.state);
+    this.buttons.get('scroll-start')!.disabled = snapshot.state !== 'CAPTURING' || snapshot.autoScroll;
+    this.buttons.get('scroll-stop')!.disabled = !snapshot.autoScroll;
+    this.buttons.get('export')!.disabled = snapshot.observationCount === 0;
+    this.buttons.get('discard')!.disabled = snapshot.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(snapshot.state);
+  }
+
+  private beginDrag(event: PointerEvent, panel: HTMLElement): void {
+    if ((event.target as Element).closest('button')) return;
+    const bounds = panel.getBoundingClientRect(); this.drag = { x: event.clientX, y: event.clientY, left: bounds.left, top: bounds.top };
+    panel.setPointerCapture?.(event.pointerId);
+    const move = (next: PointerEvent) => { if (!this.drag) return; panel.style.right = 'auto'; panel.style.left = `${Math.max(4, Math.min(innerWidth - bounds.width - 4, this.drag.left + next.clientX - this.drag.x))}px`; panel.style.top = `${Math.max(4, Math.min(innerHeight - bounds.height - 4, this.drag.top + next.clientY - this.drag.y))}px`; };
+    const end = () => { this.drag = null; panel.removeEventListener('pointermove', move); panel.removeEventListener('pointerup', end); panel.removeEventListener('pointercancel', end); };
+    panel.addEventListener('pointermove', move); panel.addEventListener('pointerup', end); panel.addEventListener('pointercancel', end);
+  }
+
+  close(): void { if (this.timer !== null) window.clearInterval(this.timer); this.host.remove(); this.onClose(); }
+}
+
 export default defineContentScript({
   matches: ['https://x.com/*'],
   runAt: 'document_idle',
@@ -811,6 +892,7 @@ export default defineContentScript({
   noScriptStartedPostMessage: true,
   main() {
     const collector = new LiveCollector();
+    let panel: FloatingPanel | null = null;
     browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
       if (sender.id !== browser.runtime.id || !message || typeof message !== 'object' || !('type' in message)) return undefined;
       const command = message as CollectorCommand;
@@ -825,6 +907,11 @@ export default defineContentScript({
           case 'XFI_EXPORT_CHUNK': sendResponse(collector.exportChunk(command.exportId, command.index)); break;
           case 'XFI_EXPORT_RELEASE': sendResponse(collector.releaseExport(command.exportId)); break;
           case 'XFI_DISCARD': sendResponse(await collector.discard()); break;
+          case 'XFI_PANEL_TOGGLE':
+            if (panel) { panel.close(); panel = null; }
+            else panel = new FloatingPanel(collector, () => { panel = null; });
+            sendResponse({ ok: true, status: collector.status(), panelOpen: panel !== null });
+            break;
           default: return;
         }
       }).catch(() => sendResponse({ ok: false, status: collector.status(), error: 'COLLECTOR_COMMAND_FAILED' }));

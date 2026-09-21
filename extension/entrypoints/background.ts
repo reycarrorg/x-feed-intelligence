@@ -217,6 +217,12 @@ export default defineBackground(() => {
         });
       }
     }
+    if (message && typeof message === 'object' && (message as { type?: string }).type === 'XFI_PANEL_SAVE_EXPORT') {
+      if (sender.id !== browser.runtime.id || sender.tab?.id == null || !sender.url?.startsWith('https://x.com/')) return undefined;
+      if (exportBusy) return Promise.resolve({ ok: false, error: 'EXPORT_BUSY' });
+      exportBusy = true;
+      return saveFromTab(sender.tab.id).finally(() => { exportBusy = false; });
+    }
     if (!message || typeof message !== 'object' || !('type' in message) || (message as { type?: string }).type !== 'XFI_SAVE_EXPORT') return undefined;
     if (sender.id !== browser.runtime.id || sender.tab || sender.url !== browser.runtime.getURL('/popup.html')) return undefined;
     const tabId = (message as SaveRequest).tabId;

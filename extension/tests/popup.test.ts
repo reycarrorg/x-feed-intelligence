@@ -51,6 +51,7 @@ beforeEach(() => {
     <button id="stop"></button><button id="export"></button>
     <button id="discard"></button><button id="revoke"></button>
     <button id="scroll-start"></button><button id="scroll-stop"></button>
+    <button id="panel"></button>
   `;
   mocks.getLastFocused.mockResolvedValue({ id: 42, type: 'normal' });
   mocks.getCurrent.mockResolvedValue({ id: 99, type: 'popup' });
@@ -116,6 +117,16 @@ describe('popup target tab', () => {
     expect(document.querySelector('#organic')?.textContent).toBe('100');
     expect(document.querySelector('#promoted')?.textContent).toBe('20');
     expect(document.querySelector('#ambiguous')?.textContent).toBe('3');
+  });
+
+  it('opens the explicit in-page controls from the confirmed X tab', async () => {
+    mocks.query.mockResolvedValue([{ id: 7 }]);
+    mocks.sendMessage.mockResolvedValue({ ok: true, status, panelOpen: true });
+    await import('../entrypoints/popup/main');
+    await vi.waitFor(() => expect((document.querySelector('#panel') as HTMLButtonElement).disabled).toBe(false));
+    (document.querySelector('#panel') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledWith(7, { type: 'XFI_PANEL_TOGGLE' }));
+    await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Controls are now on this X page'));
   });
 
   it('hands export to the background without creating a popup-owned blob URL', async () => {

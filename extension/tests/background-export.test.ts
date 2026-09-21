@@ -55,4 +55,19 @@ describe('background-owned Firefox export', () => {
     expect(mocks.messageListener!({ type: 'XFI_SAVE_EXPORT', tabId: 7 }, { id: 'other-extension', url: 'moz-extension://test/popup.html' })).toBeUndefined();
     expect(mocks.download).not.toHaveBeenCalled();
   });
+
+  it('accepts the in-page export command only from this extension on x.com', async () => {
+    const json = '{"observations":[]}';
+    mocks.sendTab.mockImplementation(async (_tabId: number, command: { type: string }) => {
+      if (command.type === 'XFI_EXPORT') return { ok: true, export: { id: 'panel-snapshot', sessionId: 'panel-session', chunkCount: 1, totalBytes: json.length } };
+      if (command.type === 'XFI_EXPORT_CHUNK') return { ok: true, chunk: json };
+      return { ok: true };
+    });
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:moz-extension://test/panel-export' });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    await import('../entrypoints/background');
+    await expect(mocks.messageListener!({ type: 'XFI_PANEL_SAVE_EXPORT' }, { id: 'test-extension', tab: { id: 7 }, url: 'https://x.com/home' })).resolves.toEqual({ ok: true, sessionId: 'panel-session' });
+    expect(mocks.sendTab).toHaveBeenCalledWith(7, { type: 'XFI_EXPORT' });
+    expect(mocks.messageListener!({ type: 'XFI_PANEL_SAVE_EXPORT' }, { id: 'test-extension', tab: { id: 7 }, url: 'https://example.com/' })).toBeUndefined();
+  });
 });

@@ -32,6 +32,16 @@ it('responds to popup commands through the callback on Chromium and ignores othe
       ok: false,
       error: 'NOTHING_TO_EXPORT',
     })));
+
+    respond.mockClear();
+    expect(listener({ type: 'XFI_PANEL_TOGGLE' }, { id: 'test-extension' }, respond)).toBe(true);
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledWith(expect.objectContaining({ ok: true, panelOpen: true })));
+    expect(document.querySelector('#xfi-floating-panel-host')).not.toBeNull();
+
+    respond.mockClear();
+    expect(listener({ type: 'XFI_PANEL_TOGGLE' }, { id: 'test-extension' }, respond)).toBe(true);
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledWith(expect.objectContaining({ ok: true, panelOpen: false })));
+    expect(document.querySelector('#xfi-floating-panel-host')).toBeNull();
   } finally {
     vi.unstubAllGlobals();
   }
