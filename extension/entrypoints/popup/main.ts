@@ -34,13 +34,14 @@ function setMessage(value: string): void {
 }
 
 function emptyStatus(state: LifecycleState = permissionGranted ? 'ARMED' : 'INACTIVE'): CollectorStatus {
-  return { state, observationCount: 0, organicCount: 0, promotedCount: 0, ambiguousCount: 0, hardStopCode: null, startedAt: null, elapsedSeconds: 0, autoScroll: false, scrollPauseReason: null, networkRequests: 0, accountActions: 0 };
+  return { state, pendingState: null, pendingObservationCount: 0, pendingChanges: false, pendingPersistenceFailure: false, observationCount: 0, organicCount: 0, promotedCount: 0, ambiguousCount: 0, hardStopCode: null, startedAt: null, elapsedSeconds: 0, autoScroll: false, scrollPauseReason: null, networkRequests: 0, accountActions: 0 };
 }
 
 function render(status: CollectorStatus): void {
   latestStatus = status;
-  elements.state.textContent = status.state.replace('_', ' ');
-  elements.state.className = `state ${status.state === 'CAPTURING' ? 'capturing' : status.state === 'ERROR' ? 'error' : ''}`;
+  const activeState = status.pendingState || status.state;
+  elements.state.textContent = status.pendingState ? `${status.state.replace('_', ' ')} (${status.pendingState.replace('_', ' ')} pending)` : status.state.replace('_', ' ');
+  elements.state.className = `state ${activeState === 'CAPTURING' ? 'capturing' : activeState === 'ERROR' ? 'error' : ''}`;
   elements.total.textContent = String(status.observationCount);
   elements.organic.textContent = String(status.organicCount);
   elements.promoted.textContent = String(status.promotedCount);
@@ -48,13 +49,13 @@ function render(status: CollectorStatus): void {
 
   elements.arm.hidden = permissionGranted;
   elements.arm.disabled = !activeTab;
-  elements.start.disabled = !confirmedXTab || !permissionGranted || !['ARMED', 'STOPPED'].includes(status.state);
-  elements.stop.disabled = status.state !== 'CAPTURING' && status.state !== 'PAUSED_HIDDEN';
-  elements.scrollStart.disabled = status.state !== 'CAPTURING' || status.autoScroll;
+  elements.start.disabled = !confirmedXTab || !permissionGranted || !['ARMED', 'STOPPED'].includes(activeState);
+  elements.stop.disabled = activeState !== 'CAPTURING' && activeState !== 'PAUSED_HIDDEN';
+  elements.scrollStart.disabled = activeState !== 'CAPTURING' || status.autoScroll;
   elements.scrollStop.disabled = !status.autoScroll;
   elements.export.disabled = exporting || status.observationCount === 0;
-  elements.discard.disabled = status.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(status.state);
-  elements.revoke.disabled = !permissionGranted || ['CAPTURING', 'PAUSED_HIDDEN'].includes(status.state);
+  elements.discard.disabled = status.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(activeState);
+  elements.revoke.disabled = !permissionGranted || ['CAPTURING', 'PAUSED_HIDDEN'].includes(activeState);
 }
 
 async function send(command: CollectorCommand, tabId = activeTab?.id): Promise<CollectorResponse> {
@@ -93,7 +94,7 @@ async function refresh(): Promise<void> {
       if (!response.ok || !response.status) throw new Error('COLLECTOR_NOT_LOADED');
       confirmedXTab = true;
       render(response.status);
-      describe(response.status.hardStopCode ? `Stopped safely: ${response.status.hardStopCode}` : response.status.autoScroll ? 'Careful auto-scroll is running while visible cards are captured.' : response.status.state === 'CAPTURING' ? 'Capturing visible cards; scroll manually or opt in to careful auto-scroll.' : 'Ready. Collection starts only when you press Start.');
+      describe(response.status.pendingPersistenceFailure ? 'Storage failed; capture stopped in this page. Recovery blocking is unconfirmed, so export the saved count now.' : response.status.hardStopCode === 'RETENTION_FAILURE' ? 'Storage failed; capture is blocked. Only the saved count is available to export.' : response.status.pendingObservationCount > 0 ? `${response.status.pendingObservationCount} card(s) pending storage; only the saved count survives refresh.` : response.status.pendingState ? `${response.status.pendingState.replace('_', ' ')} pending storage; wait for confirmation before refreshing.` : response.status.pendingChanges ? 'Updates pending storage; only the saved version survives refresh.' : response.status.hardStopCode === 'REFRESH_RECOVERY_LIMIT' ? 'Stopped before the 9 MiB refresh-safe limit. Export this private packet before starting another session.' : response.status.hardStopCode ? `Stopped safely: ${response.status.hardStopCode}` : response.status.autoScroll && response.status.scrollPauseReason === 'NO_SCROLL_MOVEMENT' ? 'Careful auto-scroll found no movement and is slowing down; it stops if progress does not resume.' : response.status.autoScroll && response.status.scrollPauseReason === 'NESTED_FEED_SCROLL' ? 'Careful auto-scroll is advancing the visible feed container.' : response.status.autoScroll ? 'Careful auto-scroll is advancing the page while visible cards are captured.' : response.status.state === 'CAPTURING' ? 'Capturing visible cards; scroll manually or opt in to careful auto-scroll.' : 'Ready. Collection starts only when you press Start.');
     } catch {
       render(emptyStatus('INACTIVE'));
       describe('No X collector is loaded in the active tab. Open or reload https://x.com; XFI will reconnect.');

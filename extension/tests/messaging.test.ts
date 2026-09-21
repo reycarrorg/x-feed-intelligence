@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ addListener: vi.fn() }));
 
 vi.mock('wxt/browser', () => ({
-  browser: { runtime: { id: 'test-extension', onMessage: { addListener: mocks.addListener } } },
+  browser: { runtime: { id: 'test-extension', sendMessage: vi.fn(async () => ({ snapshot: null })), onMessage: { addListener: mocks.addListener } } },
 }));
 
 it('responds to popup commands through the callback on Chromium and ignores other senders', async () => {
@@ -17,11 +17,11 @@ it('responds to popup commands through the callback on Chromium and ignores othe
     expect(listener).toBeTypeOf('function');
 
     const respond = vi.fn();
-    expect(listener({ type: 'XFI_STATUS' }, { id: 'test-extension' }, respond)).toBeUndefined();
-    expect(respond).toHaveBeenCalledWith(expect.objectContaining({
+    expect(listener({ type: 'XFI_STATUS' }, { id: 'test-extension' }, respond)).toBe(true);
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledWith(expect.objectContaining({
       ok: true,
       status: expect.objectContaining({ state: 'ARMED' }),
-    }));
+    })));
 
     respond.mockClear();
     expect(listener({ type: 'XFI_STATUS' }, { id: 'another-extension' }, respond)).toBeUndefined();

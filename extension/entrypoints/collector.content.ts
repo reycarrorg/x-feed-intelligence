@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { COLLECTOR_VERSION, EXACT_ORIGIN, LIMITS, PARSER_VERSION, type CollectorCommand, type CollectorResponse, type CollectorStatus, type LifecycleState } from '../lib/contracts';
+import { COLLECTOR_VERSION, EXACT_ORIGIN, LIMITS, PARSER_VERSION, type CollectorCommand, type CollectorResponse, type CollectorSessionSnapshot, type CollectorStatus, type LifecycleState } from '../lib/contracts';
 import { parseCard, SELECTORS, viewportVisibilityRatio } from '../lib/parser';
 
 const HARD_STOPS = new Set([
@@ -87,24 +87,173 @@ export class LiveCollector {
   private lastScrollY = 0;
   private lastScrollObservationCount = 0;
   private scrollDelay = 1800;
+  private revision = 0;
+  private committedSnapshot: CollectorSessionSnapshot | null = null;
+  private queuedSnapshot: CollectorSessionSnapshot | null = null;
+  private sendingSnapshot = false;
+  private writeWaiters: Array<{ revision: number; sessionId: string | null; resolve: (saved: boolean) => void }> = [];
+  private blockedConfirmed = false;
+  private clearedRevision = 0;
+  private readonly clientId = crypto.randomUUID();
+  private readonly documentStartedAt = performance.timeOrigin;
+  private readonly restored: Promise<void>;
 
   constructor() {
     document.addEventListener('visibilitychange', () => this.visibilityChanged());
+    this.restored = this.restore();
+  }
+
+  ready(): Promise<void> { return this.restored; }
+
+  private async restore(): Promise<void> {
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_SESSION_READ', clientId: this.clientId, documentStartedAt: this.documentStartedAt }) as { snapshot?: CollectorSessionSnapshot | null; blocked?: boolean };
+      const snapshot = reply?.snapshot;
+      if (snapshot && (!Array.isArray(snapshot.observations) || !Array.isArray(snapshot.events) || !snapshot.sessionId)) throw new Error('INVALID_SESSION_SNAPSHOT');
+      if (!snapshot) {
+        if (reply?.blocked) { this.blockedConfirmed = true; this.state = 'ERROR'; this.stopCode = 'RETENTION_FAILURE'; this.stoppedAt = Date.now(); }
+        return;
+      }
+      this.committedSnapshot = structuredClone(snapshot);
+      this.state = snapshot.state;
+      this.revision = snapshot.revision;
+      this.observations = snapshot.observations as Observation[];
+      this.events = snapshot.events;
+      this.sessionId = snapshot.sessionId;
+      this.startedAt = snapshot.startedAt;
+      this.stoppedAt = snapshot.stoppedAt;
+      this.stopCode = snapshot.stopCode;
+      this.ambiguousCount = snapshot.ambiguousCount;
+      this.promotionCounts = snapshot.promotionCounts;
+      this.observationBytes = snapshot.observationBytes;
+      this.assistedEver = snapshot.assistedEver;
+      this.scrollPauseReason = snapshot.scrollPauseReason;
+      if (reply?.blocked) {
+        this.blockedConfirmed = true;
+        this.state = 'ERROR';
+        this.stopCode = 'RETENTION_FAILURE';
+        this.stoppedAt = Date.now();
+        return;
+      }
+      this.identityIndexes.clear();
+      this.observations.forEach((observation, index) => {
+        const stable = [observation.platform_post_id, observation.canonical_permalink].filter((value): value is string => !!value);
+        const keys = stable.length > 0 ? stable : [`${(observation.authors as Array<{ handle?: string | null }>)[0]?.handle || 'unknown'}:${observation.displayed_timestamp || 'unknown'}:${observation.visible_text || ''}`];
+        keys.forEach((identity) => this.identityIndexes.set(String(identity), index));
+      });
+      // Auto-scroll never resumes itself after a navigation. The user must opt in again.
+      this.autoScroll = false;
+      if (this.state === 'CAPTURING') {
+        this.scrollPauseReason = 'PAGE_RELOADED';
+        this.event('RECONNECTED_AFTER_PAGE_RELOAD');
+        this.attach();
+        const remaining = Math.max(0, LIMITS.maxDurationSeconds * 1000 - (Date.now() - (this.startedAt || Date.now())));
+        this.durationTimer = window.setTimeout(() => this.limitStop('DURATION_LIMIT'), remaining);
+        this.persist();
+      }
+    } catch { this.blockedConfirmed = true; this.state = 'ERROR'; this.stopCode = 'RETENTION_FAILURE'; this.stoppedAt = Date.now(); }
+  }
+
+  private snapshot(): CollectorSessionSnapshot {
+    return { revision: ++this.revision, state: this.state, observations: this.observations, events: this.events, sessionId: this.sessionId,
+      startedAt: this.startedAt, stoppedAt: this.stoppedAt, stopCode: this.stopCode, ambiguousCount: this.ambiguousCount,
+      promotionCounts: this.promotionCounts, observationBytes: this.observationBytes, assistedEver: this.assistedEver,
+      scrollPauseReason: this.scrollPauseReason };
+  }
+
+  private persist(): Promise<boolean> {
+    const snapshot = this.snapshot();
+    this.queuedSnapshot = snapshot; // Coalesce rapid cards while one write is in flight.
+    const result = new Promise<boolean>((resolve) => this.writeWaiters.push({ revision: snapshot.revision, sessionId: snapshot.sessionId, resolve }));
+    void this.flushSnapshot();
+    return result;
+  }
+
+  private async flushSnapshot(): Promise<void> {
+    if (this.sendingSnapshot || !this.queuedSnapshot) return;
+    const snapshot = structuredClone(this.queuedSnapshot);
+    this.queuedSnapshot = null;
+    this.sendingSnapshot = true;
+    let saved = false;
+    let error = 'SESSION_STORAGE_WRITE_FAILED';
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_SESSION_WRITE', clientId: this.clientId, snapshot }) as { ok?: boolean; error?: string };
+      saved = reply?.ok === true;
+      error = reply?.error || error;
+    } catch { /* The current page is stopped below if this is its session. */ }
+    if (saved && snapshot.revision > this.clearedRevision &&
+      (!this.committedSnapshot || snapshot.revision > this.committedSnapshot.revision)) {
+      this.committedSnapshot = snapshot;
+    }
+    const resolved = this.writeWaiters.filter((waiter) => waiter.revision <= snapshot.revision);
+    this.writeWaiters = this.writeWaiters.filter((waiter) => waiter.revision > snapshot.revision);
+    for (const waiter of resolved) waiter.resolve(saved && waiter.sessionId === snapshot.sessionId);
+    if (!saved && snapshot.sessionId === this.sessionId &&
+      (error !== 'STALE_SESSION_WRITE' || snapshot.revision >= this.revision)) {
+      this.persistenceFailure(error, snapshot.sessionId);
+    }
+    this.sendingSnapshot = false;
+    void this.flushSnapshot();
+  }
+
+  private async clearPersisted(discardedSessionId: string | null): Promise<boolean> {
+    if (!discardedSessionId) return true;
+    const revision = ++this.revision;
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_SESSION_CLEAR', clientId: this.clientId, revision, sessionId: discardedSessionId }) as { ok?: boolean; stale?: boolean };
+      if (reply?.ok && !reply.stale) { this.clearedRevision = revision; return true; }
+    } catch { /* Mark the prior session blocked below. */ }
+    this.blockDiscardedSession(discardedSessionId);
+    return false;
+  }
+
+  private blockDiscardedSession(sessionId: string | null): void {
+    if (!sessionId) return;
+    try { void browser.runtime.sendMessage({ type: 'XFI_SESSION_FAIL_CLOSED', clientId: this.clientId, revision: ++this.revision, sessionId })
+      .then((reply: { ok?: boolean }) => { if (reply?.ok && (!this.sessionId || this.sessionId === sessionId)) this.blockedConfirmed = true; }, () => undefined); }
+    catch { /* The background is unavailable; see storage durability limitation. */ }
+  }
+
+  private persistenceFailure(reason: string, sessionId: string | null): void {
+    if (!sessionId || this.sessionId !== sessionId || this.stopCode === 'RETENTION_FAILURE') return;
+    this.queuedSnapshot = null;
+    for (const waiter of this.writeWaiters) waiter.resolve(false);
+    this.writeWaiters = [];
+    this.detach();
+    this.stopCode = 'RETENTION_FAILURE';
+    this.stoppedAt = Date.now();
+    this.state = 'ERROR';
+    this.event('RETENTION_FAILURE', reason);
+    try { void browser.runtime.sendMessage({ type: 'XFI_SESSION_FAIL_CLOSED', clientId: this.clientId, revision: ++this.revision, sessionId })
+      .then((reply: { ok?: boolean }) => { if (reply?.ok && this.sessionId === sessionId) this.blockedConfirmed = true; }, () => undefined); }
+    catch { /* The active page still remains stopped. */ }
   }
 
   status(): CollectorStatus {
-    const now = this.stoppedAt ?? Date.now();
+    const committed = this.committedSnapshot;
+    const committedState = this.blockedConfirmed ? 'ERROR' : committed?.state || 'ARMED';
+    const committedStopCode = this.blockedConfirmed ? 'RETENTION_FAILURE' : committed?.stopCode || null;
+    const committedSessionId = committed?.sessionId || null;
+    const pendingObservationCount = this.sessionId && this.sessionId === committedSessionId
+      ? Math.max(0, this.observations.length - (committed?.observations.length || 0))
+      : this.observations.length;
+    const startedAt = committed?.startedAt || null;
+    const now = committed?.stoppedAt ?? Date.now();
     return {
-      state: this.state,
-      observationCount: this.observations.length,
-      organicCount: this.promotionCounts.organic,
-      promotedCount: this.promotionCounts.promoted,
-      ambiguousCount: this.ambiguousCount + this.promotionCounts.ambiguous,
-      hardStopCode: this.stopCode,
-      startedAt: this.startedAt === null ? null : new Date(this.startedAt).toISOString(),
-      elapsedSeconds: this.startedAt === null ? 0 : Math.max(0, Math.floor((now - this.startedAt) / 1000)),
+      state: committedState,
+      pendingState: this.state !== committedState ? this.state : null,
+      pendingObservationCount,
+      pendingChanges: !this.blockedConfirmed && this.revision > (committed?.revision || this.clearedRevision),
+      pendingPersistenceFailure: this.state === 'ERROR' && this.stopCode === 'RETENTION_FAILURE' && !this.blockedConfirmed,
+      observationCount: committed?.observations.length || 0,
+      organicCount: committed?.promotionCounts.organic || 0,
+      promotedCount: committed?.promotionCounts.promoted || 0,
+      ambiguousCount: (committed?.ambiguousCount || 0) + (committed?.promotionCounts.ambiguous || 0),
+      hardStopCode: committedStopCode,
+      startedAt: startedAt === null ? null : new Date(startedAt).toISOString(),
+      elapsedSeconds: startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000)),
       autoScroll: this.autoScroll,
-      scrollPauseReason: this.scrollPauseReason,
+      scrollPauseReason: committed?.scrollPauseReason || this.scrollPauseReason,
       networkRequests: 0,
       accountActions: 0,
     };
@@ -114,7 +263,7 @@ export class LiveCollector {
     return { ok: true, status: this.status() };
   }
 
-  start(): CollectorResponse {
+  async start(): Promise<CollectorResponse> {
     if (!['ARMED', 'STOPPED'].includes(this.state)) return this.response(false, 'INVALID_STATE');
     const challenge = challengeCode();
     if (challenge) {
@@ -128,16 +277,19 @@ export class LiveCollector {
     this.event('SESSION_STARTED');
     this.attach();
     this.durationTimer = window.setTimeout(() => this.limitStop('DURATION_LIMIT'), LIMITS.maxDurationSeconds * 1000);
-    return this.response(true);
+    const saved = await this.persist();
+    return this.response(saved && this.state === 'CAPTURING', !saved ? 'SESSION_STORAGE_WRITE_FAILED' : this.state === 'CAPTURING' ? undefined : 'STATE_CHANGED');
   }
 
-  stop(): CollectorResponse {
+  async stop(): Promise<CollectorResponse> {
     if (!['CAPTURING', 'PAUSED_HIDDEN', 'ARMED'].includes(this.state)) return this.response(false, 'INVALID_STATE');
     this.detach();
     this.state = 'STOPPED';
     this.stoppedAt = Date.now();
     this.event('STOPPED_USER');
-    return this.response(true);
+    if (!this.sessionId) return this.response(true);
+    const saved = await this.persist();
+    return this.response(saved && this.state === 'STOPPED', !saved ? 'SESSION_STORAGE_WRITE_FAILED' : this.state === 'STOPPED' ? undefined : 'STATE_CHANGED');
   }
 
   startScroll(): CollectorResponse {
@@ -154,12 +306,14 @@ export class LiveCollector {
     this.lastScrollObservationCount = this.observations.length;
     this.scrollDelay = 1800;
     this.event('ASSISTED_SCROLL_STARTED');
+    this.persist();
     this.scheduleScroll();
     return this.response(true);
   }
 
   stopScroll(): CollectorResponse {
     this.stopScrollInternal('USER_STOP');
+    this.persist();
     return this.response(true);
   }
 
@@ -174,6 +328,21 @@ export class LiveCollector {
   private scheduleScroll(): void {
     if (!this.autoScroll) return;
     this.scrollTimer = window.setTimeout(() => this.scrollTick(), this.scrollDelay);
+  }
+
+  private scrollTarget(): HTMLElement | null {
+    const selector = 'main, [role="main"], [data-testid="primaryColumn"]';
+    const eligible = (element: HTMLElement): boolean => {
+      const style = getComputedStyle(element);
+      return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight;
+    };
+    for (const post of Array.from(document.querySelectorAll(SELECTORS.post))) {
+      if (post.parentElement?.closest(SELECTORS.post) || viewportVisibilityRatio(post) < LIMITS.minimumVisibilityRatio) continue;
+      for (let ancestor = post.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        if (ancestor instanceof HTMLElement && ancestor.matches(selector) && eligible(ancestor)) return ancestor;
+      }
+    }
+    return null;
   }
 
   private scrollTick(): void {
@@ -204,45 +373,77 @@ export class LiveCollector {
     } else {
       this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.25));
     }
-    const oldY = window.scrollY;
-    window.scrollBy({ top: Math.min(120, Math.max(60, Math.floor(innerHeight * 0.12))), behavior: 'instant' });
-    if (window.scrollY <= oldY && window.scrollY <= this.lastScrollY) {
-      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+    const step = Math.min(120, Math.max(60, Math.floor(innerHeight * 0.12)));
+    const target = this.scrollTarget();
+    if (target) {
+      const oldTop = target.scrollTop;
+      if (oldTop + target.clientHeight >= target.scrollHeight - 2) return void this.limitStop('AUTO_SCROLL_END_OF_FEED');
+      if (typeof target.scrollBy === 'function') target.scrollBy({ top: step, behavior: 'instant' });
+      else target.scrollTop = Math.min(target.scrollHeight - target.clientHeight, oldTop + step);
+      if (target.scrollTop <= oldTop) {
+        this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
+        this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+      } else {
+        this.scrollPauseReason = 'NESTED_FEED_SCROLL';
+      }
+      this.lastScrollY = target.scrollTop;
+      this.scheduleScroll();
+      return;
     }
+    const oldY = window.scrollY;
+    const documentHeight = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0);
+    if (documentHeight > window.innerHeight && oldY + window.innerHeight >= documentHeight - 2) return void this.limitStop('AUTO_SCROLL_END_OF_FEED');
+    window.scrollBy({ top: step, behavior: 'instant' });
+    if (window.scrollY <= oldY && window.scrollY <= this.lastScrollY) {
+      this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
+      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+    } else this.scrollPauseReason = 'WINDOW_SCROLL';
     this.lastScrollY = window.scrollY;
     this.scheduleScroll();
   }
 
-  discard(): CollectorResponse {
+  async discard(): Promise<CollectorResponse> {
     this.detach();
+    const discardedSessionId = this.sessionId;
+    this.state = 'PAUSED_HIDDEN';
+    const cleared = await this.clearPersisted(discardedSessionId);
+    if (!cleared) {
+      this.state = 'ERROR';
+      this.stopCode = 'RETENTION_FAILURE';
+      return this.response(false, 'SESSION_STORAGE_WRITE_FAILED');
+    }
     this.resetSession();
+    this.committedSnapshot = null;
+    this.exportSnapshot = null;
+    this.blockedConfirmed = false;
     this.state = 'ARMED';
     return this.response(true);
   }
 
   async exportPacket(): Promise<CollectorResponse> {
-    if (!this.sessionId || !this.startedAt || this.observations.length === 0) return this.response(false, 'NOTHING_TO_EXPORT');
-    const ended = this.stoppedAt ?? Date.now();
+    const committed = this.committedSnapshot;
+    if (!committed?.sessionId || !committed.startedAt || committed.observations.length === 0) return this.response(false, 'NOTHING_TO_EXPORT');
+    const ended = committed.stoppedAt ?? Date.now();
     const packet: Record<string, unknown> = {
       schema_version: '2.0.0',
       session: {
-        session_id: this.sessionId,
+        session_id: committed.sessionId,
         schema_version: '2.0.0',
         source: 'live_dom',
-        started_at: new Date(this.startedAt).toISOString(),
+        started_at: new Date(committed.startedAt).toISOString(),
         ended_at: new Date(ended).toISOString(),
         origin: EXACT_ORIGIN,
         collector_version: COLLECTOR_VERSION,
         privacy_profile: 'default_local',
-        collection_mode: this.assistedEver ? 'assisted_scroll' : 'manual_scroll',
+        collection_mode: committed.assistedEver ? 'assisted_scroll' : 'manual_scroll',
         limits: {
           max_candidates: LIMITS.maxCandidates,
           max_duration_seconds: LIMITS.maxDurationSeconds,
           max_packet_bytes: LIMITS.maxPacketBytes,
         },
       },
-      observations: this.observations,
-      collection_events: this.events,
+      observations: committed.observations,
+      collection_events: committed.events,
       content_digest: '',
     };
     packet.content_digest = await contentDigest(packet);
@@ -261,8 +462,8 @@ export class LiveCollector {
       start = end;
     }
     const id = randomId('export');
-    this.exportSnapshot = { id, sessionId: this.sessionId, json, chunks };
-    return { ...this.response(true), export: { id, sessionId: this.sessionId, chunkCount: chunks.length, totalBytes } };
+    this.exportSnapshot = { id, sessionId: committed.sessionId, json, chunks };
+    return { ...this.response(true), export: { id, sessionId: committed.sessionId, chunkCount: chunks.length, totalBytes } };
   }
 
   exportChunk(id: string, index: number): CollectorResponse {
@@ -297,7 +498,9 @@ export class LiveCollector {
     this.ambiguousCount = 0;
     this.promotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
     this.observationBytes = 0;
-    this.exportSnapshot = null;
+    this.assistedEver = false;
+    this.autoScroll = false;
+    this.scrollPauseReason = null;
     this.seenSignatures.clear();
     this.identityIndexes.clear();
     this.nodeKeys = new WeakMap();
@@ -317,6 +520,14 @@ export class LiveCollector {
       this.nodeKeys.set(element, value);
     }
     return value;
+  }
+
+  private identityKeys(parsed: ReturnType<typeof parseCard>): string[] {
+    return Array.from(new Set([
+      parsed.platformPostId,
+      parsed.canonicalPermalink,
+      `${parsed.handle || 'unknown'}:${parsed.displayedTimestamp || 'unknown'}:${parsed.visibleText || ''}`,
+    ].filter((value): value is string => !!value)));
   }
 
   private attach(): void {
@@ -373,13 +584,18 @@ export class LiveCollector {
     const ratio = Math.min(this.ratios.get(article) || 0, viewportVisibilityRatio(article));
     if (ratio < LIMITS.minimumVisibilityRatio || document.visibilityState !== 'visible') return;
     const parsed = parseCard(article);
-    const identity = parsed.platformPostId || parsed.canonicalPermalink || `${parsed.handle || 'unknown'}:${parsed.displayedTimestamp || 'unknown'}:${parsed.visibleText || ''}`;
+    const identities = this.identityKeys(parsed);
+    const identity = identities[0]!;
     const signature = stableString({ identity, text: parsed.visibleText, author: parsed.handle, promotion: parsed.promotion, media: parsed.media, quote: parsed.quote, links: parsed.outboundLinks });
     const node = this.nodeKey(article);
     if (this.seenSignatures.get(node) === signature) return;
-    const existingIndex = this.identityIndexes.get(identity);
+    const existingIndex = identities.map((candidate) => this.identityIndexes.get(candidate)).find((candidate) => candidate !== undefined);
     if (existingIndex !== undefined) {
       const existing = this.observations[existingIndex];
+      const beforeUpdate = existing ? structuredClone(existing) : null;
+      const beforeBytes = this.observationBytes;
+      const beforeCounts = { ...this.promotionCounts };
+      const beforeEvents = this.events.length;
       this.seenSignatures.set(node, signature);
       if (existing && existing.promotion.status !== parsed.promotion && existing.promotion.status !== 'ambiguous') {
         const previousBytes = byteLength(existing);
@@ -429,7 +645,16 @@ export class LiveCollector {
         this.observationBytes += byteLength(existing) - before;
         if (enriched) this.event('OBSERVATION_UPDATED', 'CONTEXT_ENRICHED');
       }
+      if (this.observationBytes + 65_536 > LIMITS.maxRefreshRecoveryBytes) {
+        if (beforeUpdate) this.observations[existingIndex] = beforeUpdate;
+        this.observationBytes = beforeBytes;
+        this.promotionCounts = beforeCounts;
+        this.events.length = beforeEvents;
+        return void this.limitStop('REFRESH_RECOVERY_LIMIT');
+      }
       if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) this.hardStop('INJECTION_CONTENT');
+      identities.forEach((candidate) => this.identityIndexes.set(candidate, existingIndex));
+      this.persist();
       return;
     }
     if (this.observations.length >= LIMITS.maxCandidates) return void this.limitStop('QUEUE_LIMIT');
@@ -511,12 +736,21 @@ export class LiveCollector {
     const nextBytes = this.observationBytes + byteLength(observation) + 1;
     // Reserve 1 MiB for session metadata, bounded events, digest and edits.
     if (nextBytes > LIMITS.maxPacketBytes - 1_048_576) return void this.limitStop('PACKET_LIMIT');
+    // A refresh-safe snapshot is intentionally smaller than the export ceiling.
+    // Reserve metadata headroom so the candidate is never accepted only to fail
+    // its mandatory background persistence write afterwards.
+    if (this.observationBytes + byteLength(observation) + 65_536 > LIMITS.maxRefreshRecoveryBytes) {
+      return void this.limitStop('REFRESH_RECOVERY_LIMIT');
+    }
     this.seenSignatures.set(node, signature);
     this.observations.push(observation);
     this.observationBytes = nextBytes;
     this.promotionCounts[parsed.promotion] += 1;
-    this.identityIndexes.set(identity, appearance);
+    // A text-only fallback is an alias only when no stable X identity has arrived;
+    // otherwise repeated boilerplate in separate posts must not collapse records.
+    (identities.length > 1 ? identities.slice(0, -1) : identities).forEach((candidate) => this.identityIndexes.set(candidate, appearance));
     this.event('OBSERVATION_ACCEPTED', 'COUNT_ONLY');
+    this.persist();
 
     if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) return void this.hardStop('INJECTION_CONTENT');
     if (this.ambiguousCount / this.observations.length > LIMITS.maxAmbiguityRatio && this.observations.length >= 20) return void this.hardStop('AMBIGUITY_LIMIT');
@@ -528,11 +762,13 @@ export class LiveCollector {
       this.detach();
       this.state = 'PAUSED_HIDDEN';
       this.event('PAUSED_DOCUMENT_HIDDEN');
+      this.persist();
     } else if (document.visibilityState === 'visible' && this.state === 'PAUSED_HIDDEN') {
       const challenge = challengeCode();
       if (challenge) return void this.hardStop(challenge);
       this.state = 'CAPTURING';
       this.attach();
+      this.persist();
     }
   }
 
@@ -542,6 +778,7 @@ export class LiveCollector {
     this.stoppedAt = Date.now();
     this.state = 'LIMIT_REACHED';
     this.event(code);
+    this.persist();
   }
 
   private hardStop(code: string): void {
@@ -551,6 +788,7 @@ export class LiveCollector {
     this.stoppedAt = Date.now();
     this.state = 'ERROR';
     this.event(safe);
+    this.persist();
   }
 
 }
@@ -565,20 +803,21 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
       if (sender.id !== browser.runtime.id || !message || typeof message !== 'object' || !('type' in message)) return undefined;
       const command = message as CollectorCommand;
-      switch (command.type) {
-        case 'XFI_STATUS': sendResponse(collector.messageStatus()); return undefined;
-        case 'XFI_START': sendResponse(collector.start()); return undefined;
-        case 'XFI_SCROLL_START': sendResponse(collector.startScroll()); return undefined;
-        case 'XFI_SCROLL_STOP': sendResponse(collector.stopScroll()); return undefined;
-        case 'XFI_STOP': sendResponse(collector.stop()); return undefined;
-        case 'XFI_EXPORT':
-          void collector.exportPacket().then(sendResponse, () => sendResponse({ ok: false, status: collector.status(), error: 'EXPORT_FAILED' }));
-          return true;
-        case 'XFI_EXPORT_CHUNK': sendResponse(collector.exportChunk(command.exportId, command.index)); return undefined;
-        case 'XFI_EXPORT_RELEASE': sendResponse(collector.releaseExport(command.exportId)); return undefined;
-        case 'XFI_DISCARD': sendResponse(collector.discard()); return undefined;
-        default: return undefined;
-      }
+      void collector.ready().then(async () => {
+        switch (command.type) {
+          case 'XFI_STATUS': sendResponse(collector.messageStatus()); break;
+          case 'XFI_START': sendResponse(await collector.start()); break;
+          case 'XFI_SCROLL_START': sendResponse(collector.startScroll()); break;
+          case 'XFI_SCROLL_STOP': sendResponse(collector.stopScroll()); break;
+          case 'XFI_STOP': sendResponse(await collector.stop()); break;
+          case 'XFI_EXPORT': sendResponse(await collector.exportPacket()); break;
+          case 'XFI_EXPORT_CHUNK': sendResponse(collector.exportChunk(command.exportId, command.index)); break;
+          case 'XFI_EXPORT_RELEASE': sendResponse(collector.releaseExport(command.exportId)); break;
+          case 'XFI_DISCARD': sendResponse(await collector.discard()); break;
+          default: return;
+        }
+      }).catch(() => sendResponse({ ok: false, status: collector.status(), error: 'COLLECTOR_COMMAND_FAILED' }));
+      return true;
     });
   },
 });

@@ -7,6 +7,9 @@ export const LIMITS = Object.freeze({
   maxCandidates: 10_000,
   maxDurationSeconds: 28_800,
   maxPacketBytes: 15 * 1_048_576,
+  // Firefox session storage is intentionally memory-only and has a smaller quota
+  // than the export packet. Stop before this boundary so refresh recovery is real.
+  maxRefreshRecoveryBytes: 9 * 1_048_576,
   maxEvents: 256,
   maxAmbiguityRatio: 0.05,
 });
@@ -24,6 +27,11 @@ export type PromotionStatus = 'organic' | 'promoted' | 'ambiguous';
 
 export interface CollectorStatus {
   state: LifecycleState;
+  // Only acknowledged session-storage data contributes to the displayed totals.
+  pendingState: LifecycleState | null;
+  pendingObservationCount: number;
+  pendingChanges: boolean;
+  pendingPersistenceFailure: boolean;
   observationCount: number;
   organicCount: number;
   promotedCount: number;
@@ -35,6 +43,25 @@ export interface CollectorStatus {
   scrollPauseReason: string | null;
   networkRequests: 0;
   accountActions: 0;
+}
+
+// Kept by the extension background for a tab's lifetime so a normal x.com
+// document refresh can reconnect without retaining a promise across Firefox
+// restarts.  It deliberately never includes cookies, tokens, or page HTML.
+export interface CollectorSessionSnapshot {
+  revision: number;
+  state: LifecycleState;
+  observations: Array<Record<string, unknown>>;
+  events: Array<{ event_code: string; at: string; safe_detail_code: string | null }>;
+  sessionId: string | null;
+  startedAt: number | null;
+  stoppedAt: number | null;
+  stopCode: string | null;
+  ambiguousCount: number;
+  promotionCounts: { organic: number; promoted: number; ambiguous: number };
+  observationBytes: number;
+  assistedEver: boolean;
+  scrollPauseReason: string | null;
 }
 
 export type CollectorCommand =
