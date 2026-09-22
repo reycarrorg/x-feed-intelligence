@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { COLLECTOR_VERSION, EXACT_ORIGIN, LIMITS, PARSER_VERSION, type CollectorCommand, type CollectorResponse, type CollectorStatus, type LifecycleState } from '../lib/contracts';
+import { COLLECTOR_VERSION, EXACT_ORIGIN, LIMITS, PARSER_VERSION, type CollectorCommand, type CollectorResponse, type CollectorSessionSnapshot, type CollectorStatus, type LifecycleState } from '../lib/contracts';
 import { parseCard, SELECTORS, viewportVisibilityRatio } from '../lib/parser';
 
 const HARD_STOPS = new Set([
@@ -78,25 +78,188 @@ export class LiveCollector {
   private promotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
   private observationBytes = 0;
   private exportSnapshot: { id: string; sessionId: string; json: string; chunks: Array<[number, number]> } | null = null;
-  private indicator: HTMLElement | null = null;
+  private autoScroll = false;
+  private assistedEver = false;
+  private scrollTimer: number | null = null;
+  private scrollPauseReason: string | null = null;
+  private lastDomChange = Date.now();
+  private lastScrollProgress = Date.now();
+  private lastScrollY = 0;
+  private lastScrollObservationCount = 0;
+  private scrollDelay = 1800;
+  private revision = 0;
+  private committedSnapshot: CollectorSessionSnapshot | null = null;
+  private queuedSnapshot: CollectorSessionSnapshot | null = null;
+  private sendingSnapshot = false;
+  private writeWaiters: Array<{ revision: number; sessionId: string | null; resolve: (saved: boolean) => void }> = [];
+  private blockedConfirmed = false;
+  private clearedRevision = 0;
+  private readonly clientId = crypto.randomUUID();
+  private readonly documentStartedAt = performance.timeOrigin;
+  private readonly restored: Promise<void>;
 
   constructor() {
-    this.renderIndicator();
     document.addEventListener('visibilitychange', () => this.visibilityChanged());
+    this.restored = this.restore();
+  }
+
+  ready(): Promise<void> { return this.restored; }
+
+  private async restore(): Promise<void> {
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_SESSION_READ', clientId: this.clientId, documentStartedAt: this.documentStartedAt }) as { snapshot?: CollectorSessionSnapshot | null; blocked?: boolean };
+      const snapshot = reply?.snapshot;
+      if (snapshot && (!Array.isArray(snapshot.observations) || !Array.isArray(snapshot.events) || !snapshot.sessionId)) throw new Error('INVALID_SESSION_SNAPSHOT');
+      if (!snapshot) {
+        if (reply?.blocked) { this.blockedConfirmed = true; this.state = 'ERROR'; this.stopCode = 'RETENTION_FAILURE'; this.stoppedAt = Date.now(); }
+        return;
+      }
+      this.committedSnapshot = structuredClone(snapshot);
+      this.state = snapshot.state;
+      this.revision = snapshot.revision;
+      this.observations = snapshot.observations as Observation[];
+      this.events = snapshot.events;
+      this.sessionId = snapshot.sessionId;
+      this.startedAt = snapshot.startedAt;
+      this.stoppedAt = snapshot.stoppedAt;
+      this.stopCode = snapshot.stopCode;
+      this.ambiguousCount = snapshot.ambiguousCount;
+      this.promotionCounts = snapshot.promotionCounts;
+      this.observationBytes = snapshot.observationBytes;
+      this.assistedEver = snapshot.assistedEver;
+      this.scrollPauseReason = snapshot.scrollPauseReason;
+      if (reply?.blocked) {
+        this.blockedConfirmed = true;
+        this.state = 'ERROR';
+        this.stopCode = 'RETENTION_FAILURE';
+        this.stoppedAt = Date.now();
+        return;
+      }
+      this.identityIndexes.clear();
+      this.observations.forEach((observation, index) => {
+        const stable = [observation.platform_post_id, observation.canonical_permalink].filter((value): value is string => !!value);
+        const keys = stable.length > 0 ? stable : [`${(observation.authors as Array<{ handle?: string | null }>)[0]?.handle || 'unknown'}:${observation.displayed_timestamp || 'unknown'}:${observation.visible_text || ''}`];
+        keys.forEach((identity) => this.identityIndexes.set(String(identity), index));
+      });
+      // Auto-scroll never resumes itself after a navigation. The user must opt in again.
+      this.autoScroll = false;
+      // Refreshing an active page hides the old document before it unloads. If
+      // that pause was committed, the new visible document must reconnect it;
+      // an initially hidden document remains paused until it becomes visible.
+      const resumeAfterRefresh = this.state === 'CAPTURING' ||
+        (this.state === 'PAUSED_HIDDEN' && document.visibilityState === 'visible');
+      if (resumeAfterRefresh) {
+        this.state = 'CAPTURING';
+        this.scrollPauseReason = 'PAGE_RELOADED';
+        this.event('RECONNECTED_AFTER_PAGE_RELOAD');
+        this.attach();
+        const remaining = Math.max(0, LIMITS.maxDurationSeconds * 1000 - (Date.now() - (this.startedAt || Date.now())));
+        this.durationTimer = window.setTimeout(() => this.limitStop('DURATION_LIMIT'), remaining);
+        this.persist();
+      }
+    } catch { this.blockedConfirmed = true; this.state = 'ERROR'; this.stopCode = 'RETENTION_FAILURE'; this.stoppedAt = Date.now(); }
+  }
+
+  private snapshot(): CollectorSessionSnapshot {
+    return { revision: ++this.revision, state: this.state, observations: this.observations, events: this.events, sessionId: this.sessionId,
+      startedAt: this.startedAt, stoppedAt: this.stoppedAt, stopCode: this.stopCode, ambiguousCount: this.ambiguousCount,
+      promotionCounts: this.promotionCounts, observationBytes: this.observationBytes, assistedEver: this.assistedEver,
+      scrollPauseReason: this.scrollPauseReason };
+  }
+
+  private persist(): Promise<boolean> {
+    const snapshot = this.snapshot();
+    this.queuedSnapshot = snapshot; // Coalesce rapid cards while one write is in flight.
+    const result = new Promise<boolean>((resolve) => this.writeWaiters.push({ revision: snapshot.revision, sessionId: snapshot.sessionId, resolve }));
+    void this.flushSnapshot();
+    return result;
+  }
+
+  private async flushSnapshot(): Promise<void> {
+    if (this.sendingSnapshot || !this.queuedSnapshot) return;
+    const snapshot = structuredClone(this.queuedSnapshot);
+    this.queuedSnapshot = null;
+    this.sendingSnapshot = true;
+    let saved = false;
+    let error = 'SESSION_STORAGE_WRITE_FAILED';
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_SESSION_WRITE', clientId: this.clientId, snapshot }) as { ok?: boolean; error?: string };
+      saved = reply?.ok === true;
+      error = reply?.error || error;
+    } catch { /* The current page is stopped below if this is its session. */ }
+    if (saved && snapshot.revision > this.clearedRevision &&
+      (!this.committedSnapshot || snapshot.revision > this.committedSnapshot.revision)) {
+      this.committedSnapshot = snapshot;
+    }
+    const resolved = this.writeWaiters.filter((waiter) => waiter.revision <= snapshot.revision);
+    this.writeWaiters = this.writeWaiters.filter((waiter) => waiter.revision > snapshot.revision);
+    for (const waiter of resolved) waiter.resolve(saved && waiter.sessionId === snapshot.sessionId);
+    if (!saved && snapshot.sessionId === this.sessionId &&
+      (error !== 'STALE_SESSION_WRITE' || snapshot.revision >= this.revision)) {
+      this.persistenceFailure(error, snapshot.sessionId);
+    }
+    this.sendingSnapshot = false;
+    void this.flushSnapshot();
+  }
+
+  private async clearPersisted(discardedSessionId: string | null): Promise<boolean> {
+    if (!discardedSessionId) return true;
+    const revision = ++this.revision;
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_SESSION_CLEAR', clientId: this.clientId, revision, sessionId: discardedSessionId }) as { ok?: boolean; stale?: boolean };
+      if (reply?.ok && !reply.stale) { this.clearedRevision = revision; return true; }
+    } catch { /* Mark the prior session blocked below. */ }
+    this.blockDiscardedSession(discardedSessionId);
+    return false;
+  }
+
+  private blockDiscardedSession(sessionId: string | null): void {
+    if (!sessionId) return;
+    try { void browser.runtime.sendMessage({ type: 'XFI_SESSION_FAIL_CLOSED', clientId: this.clientId, revision: ++this.revision, sessionId })
+      .then((reply: { ok?: boolean }) => { if (reply?.ok && (!this.sessionId || this.sessionId === sessionId)) this.blockedConfirmed = true; }, () => undefined); }
+    catch { /* The background is unavailable; see storage durability limitation. */ }
+  }
+
+  private persistenceFailure(reason: string, sessionId: string | null): void {
+    if (!sessionId || this.sessionId !== sessionId || this.stopCode === 'RETENTION_FAILURE') return;
+    this.queuedSnapshot = null;
+    for (const waiter of this.writeWaiters) waiter.resolve(false);
+    this.writeWaiters = [];
+    this.detach();
+    this.stopCode = 'RETENTION_FAILURE';
+    this.stoppedAt = Date.now();
+    this.state = 'ERROR';
+    this.event('RETENTION_FAILURE', reason);
+    try { void browser.runtime.sendMessage({ type: 'XFI_SESSION_FAIL_CLOSED', clientId: this.clientId, revision: ++this.revision, sessionId })
+      .then((reply: { ok?: boolean }) => { if (reply?.ok && this.sessionId === sessionId) this.blockedConfirmed = true; }, () => undefined); }
+    catch { /* The active page still remains stopped. */ }
   }
 
   status(): CollectorStatus {
-    const now = this.stoppedAt ?? Date.now();
+    const committed = this.committedSnapshot;
+    const committedState = this.blockedConfirmed ? 'ERROR' : committed?.state || 'ARMED';
+    const committedStopCode = this.blockedConfirmed ? 'RETENTION_FAILURE' : committed?.stopCode || null;
+    const committedSessionId = committed?.sessionId || null;
+    const pendingObservationCount = this.sessionId && this.sessionId === committedSessionId
+      ? Math.max(0, this.observations.length - (committed?.observations.length || 0))
+      : this.observations.length;
+    const startedAt = committed?.startedAt || null;
+    const now = committed?.stoppedAt ?? Date.now();
     return {
-      state: this.state,
-      observationCount: this.observations.length,
-      organicCount: this.promotionCounts.organic,
-      promotedCount: this.promotionCounts.promoted,
-      ambiguousCount: this.ambiguousCount + this.promotionCounts.ambiguous,
-      hardStopCode: this.stopCode,
-      startedAt: this.startedAt === null ? null : new Date(this.startedAt).toISOString(),
-      elapsedSeconds: this.startedAt === null ? 0 : Math.max(0, Math.floor((now - this.startedAt) / 1000)),
-      autoScroll: false,
+      state: committedState,
+      pendingState: this.state !== committedState ? this.state : null,
+      pendingObservationCount,
+      pendingChanges: !this.blockedConfirmed && this.revision > (committed?.revision || this.clearedRevision),
+      pendingPersistenceFailure: this.state === 'ERROR' && this.stopCode === 'RETENTION_FAILURE' && !this.blockedConfirmed,
+      observationCount: committed?.observations.length || 0,
+      organicCount: committed?.promotionCounts.organic || 0,
+      promotedCount: committed?.promotionCounts.promoted || 0,
+      ambiguousCount: (committed?.ambiguousCount || 0) + (committed?.promotionCounts.ambiguous || 0),
+      hardStopCode: committedStopCode,
+      startedAt: startedAt === null ? null : new Date(startedAt).toISOString(),
+      elapsedSeconds: startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000)),
+      autoScroll: this.autoScroll,
+      scrollPauseReason: committed?.scrollPauseReason || this.scrollPauseReason,
       networkRequests: 0,
       accountActions: 0,
     };
@@ -106,7 +269,7 @@ export class LiveCollector {
     return { ok: true, status: this.status() };
   }
 
-  start(): CollectorResponse {
+  async start(): Promise<CollectorResponse> {
     if (!['ARMED', 'STOPPED'].includes(this.state)) return this.response(false, 'INVALID_STATE');
     const challenge = challengeCode();
     if (challenge) {
@@ -120,51 +283,178 @@ export class LiveCollector {
     this.event('SESSION_STARTED');
     this.attach();
     this.durationTimer = window.setTimeout(() => this.limitStop('DURATION_LIMIT'), LIMITS.maxDurationSeconds * 1000);
-    this.renderIndicator();
-    return this.response(true);
+    const saved = await this.persist();
+    return this.response(saved && this.state === 'CAPTURING', !saved ? 'SESSION_STORAGE_WRITE_FAILED' : this.state === 'CAPTURING' ? undefined : 'STATE_CHANGED');
   }
 
-  stop(): CollectorResponse {
+  async stop(): Promise<CollectorResponse> {
     if (!['CAPTURING', 'PAUSED_HIDDEN', 'ARMED'].includes(this.state)) return this.response(false, 'INVALID_STATE');
     this.detach();
     this.state = 'STOPPED';
     this.stoppedAt = Date.now();
     this.event('STOPPED_USER');
-    this.renderIndicator();
+    if (!this.sessionId) return this.response(true);
+    const saved = await this.persist();
+    return this.response(saved && this.state === 'STOPPED', !saved ? 'SESSION_STORAGE_WRITE_FAILED' : this.state === 'STOPPED' ? undefined : 'STATE_CHANGED');
+  }
+
+  startScroll(): CollectorResponse {
+    if (this.state !== 'CAPTURING' || document.visibilityState !== 'visible') return this.response(false, 'SCROLL_REQUIRES_VISIBLE_CAPTURE');
+    const challenge = challengeCode();
+    if (challenge) { this.hardStop(challenge); return this.response(false, challenge); }
+    if (this.autoScroll) return this.response(true);
+    this.autoScroll = true;
+    this.assistedEver = true;
+    this.scrollPauseReason = null;
+    this.lastDomChange = Date.now();
+    this.lastScrollProgress = Date.now();
+    this.lastScrollY = window.scrollY;
+    this.lastScrollObservationCount = this.observations.length;
+    this.scrollDelay = 1800;
+    this.event('ASSISTED_SCROLL_STARTED');
+    this.persist();
+    this.scheduleScroll();
     return this.response(true);
   }
 
-  discard(): CollectorResponse {
+  stopScroll(): CollectorResponse {
+    this.stopScrollInternal('USER_STOP');
+    this.persist();
+    return this.response(true);
+  }
+
+  private stopScrollInternal(reason: string): void {
+    if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer);
+    this.scrollTimer = null;
+    if (this.autoScroll) this.event('ASSISTED_SCROLL_STOPPED', reason);
+    this.autoScroll = false;
+    this.scrollPauseReason = reason;
+  }
+
+  private scheduleScroll(): void {
+    if (!this.autoScroll) return;
+    this.scrollTimer = window.setTimeout(() => this.scrollTick(), this.scrollDelay);
+  }
+
+  private scrollTarget(): HTMLElement | null {
+    const selector = 'main, [role="main"], [data-testid="primaryColumn"]';
+    const eligible = (element: HTMLElement): boolean => {
+      const style = getComputedStyle(element);
+      return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight;
+    };
+    for (const post of Array.from(document.querySelectorAll(SELECTORS.post))) {
+      if (post.parentElement?.closest(SELECTORS.post) || viewportVisibilityRatio(post) < LIMITS.minimumVisibilityRatio) continue;
+      for (let ancestor = post.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        if (ancestor instanceof HTMLElement && ancestor.matches(selector) && eligible(ancestor)) return ancestor;
+      }
+    }
+    return null;
+  }
+
+  private scrollTick(): void {
+    this.scrollTimer = null;
+    if (!this.autoScroll) return;
+    const challenge = challengeCode();
+    if (challenge) return void this.hardStop(challenge);
+    if (this.state !== 'CAPTURING' || document.visibilityState !== 'visible') return void this.stopScrollInternal('HIDDEN_OR_STOPPED');
+    const now = Date.now();
+    if (now - this.lastScrollProgress > 20_000) return void this.limitStop('AUTO_SCROLL_NO_PROGRESS');
+    // Wait for visible cards to hydrate and process before moving the viewport.
+    if (now - this.lastDomChange < 700) {
+      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.25));
+      return void this.scheduleScroll();
+    }
+    document.querySelectorAll(SELECTORS.post).forEach((card) => {
+      if (!card.parentElement?.closest(SELECTORS.post) && viewportVisibilityRatio(card) >= LIMITS.minimumVisibilityRatio) {
+        this.ratios.set(card, 1);
+        this.process(card);
+      }
+    });
+    if (this.state !== 'CAPTURING') return;
+    const gained = this.observations.length - this.lastScrollObservationCount;
+    if (gained > 0) {
+      this.lastScrollProgress = now;
+      this.lastScrollObservationCount = this.observations.length;
+      this.scrollDelay = Math.max(1200, Math.round(this.scrollDelay * 0.9));
+    } else {
+      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.25));
+    }
+    const step = Math.min(120, Math.max(60, Math.floor(innerHeight * 0.12)));
+    const target = this.scrollTarget();
+    if (target) {
+      const oldTop = target.scrollTop;
+      if (oldTop + target.clientHeight >= target.scrollHeight - 2) return void this.limitStop('AUTO_SCROLL_END_OF_FEED');
+      if (typeof target.scrollBy !== 'function') {
+        this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
+        this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+        this.scheduleScroll();
+        return;
+      }
+      target.scrollBy({ top: step, behavior: 'instant' });
+      if (target.scrollTop <= oldTop) {
+        this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
+        this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+      } else {
+        this.scrollPauseReason = 'NESTED_FEED_SCROLL';
+      }
+      this.lastScrollY = target.scrollTop;
+      this.scheduleScroll();
+      return;
+    }
+    const oldY = window.scrollY;
+    const documentHeight = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0);
+    if (documentHeight > window.innerHeight && oldY + window.innerHeight >= documentHeight - 2) return void this.limitStop('AUTO_SCROLL_END_OF_FEED');
+    window.scrollBy({ top: step, behavior: 'instant' });
+    if (window.scrollY <= oldY && window.scrollY <= this.lastScrollY) {
+      this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
+      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+    } else this.scrollPauseReason = 'WINDOW_SCROLL';
+    this.lastScrollY = window.scrollY;
+    this.scheduleScroll();
+  }
+
+  async discard(): Promise<CollectorResponse> {
     this.detach();
+    const discardedSessionId = this.sessionId;
+    this.state = 'PAUSED_HIDDEN';
+    const cleared = await this.clearPersisted(discardedSessionId);
+    if (!cleared) {
+      this.state = 'ERROR';
+      this.stopCode = 'RETENTION_FAILURE';
+      return this.response(false, 'SESSION_STORAGE_WRITE_FAILED');
+    }
     this.resetSession();
+    this.committedSnapshot = null;
+    this.exportSnapshot = null;
+    this.blockedConfirmed = false;
     this.state = 'ARMED';
-    this.renderIndicator();
     return this.response(true);
   }
 
   async exportPacket(): Promise<CollectorResponse> {
-    if (!this.sessionId || !this.startedAt || this.observations.length === 0) return this.response(false, 'NOTHING_TO_EXPORT');
-    const ended = this.stoppedAt ?? Date.now();
+    const committed = this.committedSnapshot;
+    if (!committed?.sessionId || !committed.startedAt || committed.observations.length === 0) return this.response(false, 'NOTHING_TO_EXPORT');
+    const ended = committed.stoppedAt ?? Date.now();
     const packet: Record<string, unknown> = {
       schema_version: '2.0.0',
       session: {
-        session_id: this.sessionId,
+        session_id: committed.sessionId,
         schema_version: '2.0.0',
         source: 'live_dom',
-        started_at: new Date(this.startedAt).toISOString(),
+        started_at: new Date(committed.startedAt).toISOString(),
         ended_at: new Date(ended).toISOString(),
         origin: EXACT_ORIGIN,
         collector_version: COLLECTOR_VERSION,
         privacy_profile: 'default_local',
-        collection_mode: 'manual_scroll',
+        collection_mode: committed.assistedEver ? 'assisted_scroll' : 'manual_scroll',
         limits: {
           max_candidates: LIMITS.maxCandidates,
           max_duration_seconds: LIMITS.maxDurationSeconds,
           max_packet_bytes: LIMITS.maxPacketBytes,
         },
       },
-      observations: this.observations,
-      collection_events: this.events,
+      observations: committed.observations,
+      collection_events: committed.events,
       content_digest: '',
     };
     packet.content_digest = await contentDigest(packet);
@@ -183,8 +473,8 @@ export class LiveCollector {
       start = end;
     }
     const id = randomId('export');
-    this.exportSnapshot = { id, sessionId: this.sessionId, json, chunks };
-    return { ...this.response(true), export: { id, sessionId: this.sessionId, chunkCount: chunks.length, totalBytes } };
+    this.exportSnapshot = { id, sessionId: committed.sessionId, json, chunks };
+    return { ...this.response(true), export: { id, sessionId: committed.sessionId, chunkCount: chunks.length, totalBytes } };
   }
 
   exportChunk(id: string, index: number): CollectorResponse {
@@ -199,6 +489,9 @@ export class LiveCollector {
   releaseExport(id: string): CollectorResponse {
     if (this.exportSnapshot?.id !== id) return this.response(false, 'INVALID_EXPORT_ID');
     this.exportSnapshot = null;
+    this.stopScrollInternal('SESSION_RESET');
+    this.assistedEver = false;
+    this.scrollPauseReason = null;
     return this.response(true);
   }
 
@@ -216,7 +509,9 @@ export class LiveCollector {
     this.ambiguousCount = 0;
     this.promotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
     this.observationBytes = 0;
-    this.exportSnapshot = null;
+    this.assistedEver = false;
+    this.autoScroll = false;
+    this.scrollPauseReason = null;
     this.seenSignatures.clear();
     this.identityIndexes.clear();
     this.nodeKeys = new WeakMap();
@@ -238,6 +533,14 @@ export class LiveCollector {
     return value;
   }
 
+  private identityKeys(parsed: ReturnType<typeof parseCard>): string[] {
+    return Array.from(new Set([
+      parsed.platformPostId,
+      parsed.canonicalPermalink,
+      `${parsed.handle || 'unknown'}:${parsed.displayedTimestamp || 'unknown'}:${parsed.visibleText || ''}`,
+    ].filter((value): value is string => !!value)));
+  }
+
   private attach(): void {
     if (this.state !== 'CAPTURING' || this.intersectionObserver || this.mutationObserver) return;
     const challenge = challengeCode();
@@ -250,6 +553,7 @@ export class LiveCollector {
       }
     }, { threshold: [0, LIMITS.minimumVisibilityRatio, 1] });
     this.mutationObserver = new MutationObserver((mutations) => {
+      this.lastDomChange = Date.now();
       const challengeNow = challengeCode();
       if (challengeNow) return void this.hardStop(challengeNow);
       const changed = new Set<Element>();
@@ -270,6 +574,7 @@ export class LiveCollector {
   }
 
   private detach(): void {
+    this.stopScrollInternal('CAPTURE_STOPPED');
     this.intersectionObserver?.disconnect();
     this.mutationObserver?.disconnect();
     this.intersectionObserver = null;
@@ -290,13 +595,18 @@ export class LiveCollector {
     const ratio = Math.min(this.ratios.get(article) || 0, viewportVisibilityRatio(article));
     if (ratio < LIMITS.minimumVisibilityRatio || document.visibilityState !== 'visible') return;
     const parsed = parseCard(article);
-    const identity = parsed.platformPostId || parsed.canonicalPermalink || `${parsed.handle || 'unknown'}:${parsed.displayedTimestamp || 'unknown'}:${parsed.visibleText || ''}`;
-    const signature = stableString({ identity, text: parsed.visibleText, author: parsed.handle, promotion: parsed.promotion, media: parsed.media });
+    const identities = this.identityKeys(parsed);
+    const identity = identities[0]!;
+    const signature = stableString({ identity, text: parsed.visibleText, author: parsed.handle, promotion: parsed.promotion, media: parsed.media, quote: parsed.quote, links: parsed.outboundLinks });
     const node = this.nodeKey(article);
     if (this.seenSignatures.get(node) === signature) return;
-    const existingIndex = this.identityIndexes.get(identity);
+    const existingIndex = identities.map((candidate) => this.identityIndexes.get(candidate)).find((candidate) => candidate !== undefined);
     if (existingIndex !== undefined) {
       const existing = this.observations[existingIndex];
+      const beforeUpdate = existing ? structuredClone(existing) : null;
+      const beforeBytes = this.observationBytes;
+      const beforeCounts = { ...this.promotionCounts };
+      const beforeEvents = this.events.length;
       this.seenSignatures.set(node, signature);
       if (existing && existing.promotion.status !== parsed.promotion && existing.promotion.status !== 'ambiguous') {
         const previousBytes = byteLength(existing);
@@ -311,9 +621,51 @@ export class LiveCollector {
         this.promotionCounts.ambiguous += 1;
         this.observationBytes += byteLength(existing) - previousBytes;
         this.event('OBSERVATION_UPDATED', 'PROMOTION_STATE_CHANGED');
-        this.renderIndicator();
+      }
+      if (existing) {
+        const before = byteLength(existing);
+        let enriched = false;
+        if ((!existing.visible_text || String(parsed.visibleText || '').length > String(existing.visible_text).length) && parsed.visibleText) { existing.visible_text = parsed.visibleText; enriched = true; }
+        const priorQuote = existing.quote_context as { platform_post_id?: string | null; handle?: string | null; visible_text?: string | null; media?: unknown[] } | null;
+        if (parsed.quote && (!priorQuote || (
+          (!priorQuote.platform_post_id || !!parsed.quote.id) &&
+          (!priorQuote.handle || !!parsed.quote.handle) &&
+          String(parsed.quote.text || '').length >= String(priorQuote.visible_text || '').length &&
+          parsed.quote.media.length >= (priorQuote.media?.length || 0) &&
+          (String(parsed.quote.text || '').length > String(priorQuote.visible_text || '').length || parsed.quote.media.length > (priorQuote.media?.length || 0) || (!priorQuote.platform_post_id && !!parsed.quote.id))
+        ))) {
+          existing.quote_context = { platform_post_id: parsed.quote.id, canonical_permalink: parsed.quote.permalink, display_name: parsed.quote.displayName,
+            handle: parsed.quote.handle, visible_text: parsed.quote.text, media: parsed.quote.media.map((item) => ({ kind: item.kind, alt_text: item.altText })) };
+          existing.relationships = parsed.quote.id ? [{ kind: 'quotes', source_local_post_id: `${existing.observation_id}-quoted-source`,
+            source_platform_post_id: parsed.quote.id, confidence: 0.9, provenance_ids: [(existing.provenance as Array<{ provenance_id: string }>)[0]!.provenance_id] }] : [];
+          enriched = true;
+        }
+        if (parsed.outboundLinks.length > (existing.outbound_links as unknown[]).length) { existing.outbound_links = parsed.outboundLinks; enriched = true; }
+        const media = existing.media as Array<Record<string, unknown>>;
+        if (parsed.media.length > media.length) {
+          const provenanceId = (existing.provenance as Array<{ provenance_id: string }>)[0]!.provenance_id;
+          existing.media = parsed.media.map((item, index) => ({ local_media_id: `${existing.observation_id}-media-${index}`, kind: item.kind, alt_text: item.altText,
+            visible_description: item.visibleDescription || null, perceptual_fingerprint: null, binary_collected: false, confidence: item.altText ? 0.9 : 0.6, provenance_ids: [provenanceId] }));
+          enriched = true;
+        }
+        const uncertainties = existing.uncertainty as Array<{ code: string }>;
+        for (const code of parsed.uncertaintyCodes) if (!uncertainties.some((item) => item.code === code) && uncertainties.length < 64) {
+          uncertainties.push({ code, field: 'observation', severity: 'review', requires_review: true, safe_detail: null } as { code: string }); enriched = true;
+        }
+        existing.last_observed_at = new Date().toISOString();
+        this.observationBytes += byteLength(existing) - before;
+        if (enriched) this.event('OBSERVATION_UPDATED', 'CONTEXT_ENRICHED');
+      }
+      if (this.observationBytes + 65_536 > LIMITS.maxRefreshRecoveryBytes) {
+        if (beforeUpdate) this.observations[existingIndex] = beforeUpdate;
+        this.observationBytes = beforeBytes;
+        this.promotionCounts = beforeCounts;
+        this.events.length = beforeEvents;
+        return void this.limitStop('REFRESH_RECOVERY_LIMIT');
       }
       if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) this.hardStop('INJECTION_CONTENT');
+      identities.forEach((candidate) => this.identityIndexes.set(candidate, existingIndex));
+      this.persist();
       return;
     }
     if (this.observations.length >= LIMITS.maxCandidates) return void this.limitStop('QUEUE_LIMIT');
@@ -341,17 +693,22 @@ export class LiveCollector {
       platform_post_id: parsed.platformPostId,
       canonical_permalink: parsed.canonicalPermalink,
       visible_text: parsed.visibleText,
+      first_observed_at: new Date().toISOString(),
+      last_observed_at: new Date().toISOString(),
+      outbound_links: parsed.outboundLinks,
+      quote_context: parsed.quote ? { platform_post_id: parsed.quote.id, canonical_permalink: parsed.quote.permalink, display_name: parsed.quote.displayName,
+        handle: parsed.quote.handle, visible_text: parsed.quote.text, media: parsed.quote.media.map((item) => ({ kind: item.kind, alt_text: item.altText })) } : null,
       displayed_timestamp: parsed.displayedTimestamp,
       authors: [{
         local_author_id: safeAuthorId(parsed.handle, String(appearance)),
         platform_author_id: null,
         display_name: parsed.displayName,
         handle: parsed.handle,
-        role: parsed.uncertaintyCodes.includes('EMBEDDED_QUOTE_REVIEW_REQUIRED') ? 'quoting' : 'original',
+        role: parsed.quote ? 'quoting' : 'original',
         identity_confidence: parsed.handle ? 0.95 : 0.35,
         uncertainty_codes: parsed.handle ? [] : ['MISSING_AUTHOR_HANDLE'],
       }],
-      relationships: [],
+      relationships: parsed.quote?.id ? [{ kind: 'quotes', source_local_post_id: `${observationId}-quoted-source`, source_platform_post_id: parsed.quote.id, confidence: 0.9, provenance_ids: [provenanceId] }] : [],
       media: parsed.media.map((media, index) => ({
         local_media_id: `${observationId}-media-${index}`,
         kind: media.kind,
@@ -390,13 +747,21 @@ export class LiveCollector {
     const nextBytes = this.observationBytes + byteLength(observation) + 1;
     // Reserve 1 MiB for session metadata, bounded events, digest and edits.
     if (nextBytes > LIMITS.maxPacketBytes - 1_048_576) return void this.limitStop('PACKET_LIMIT');
+    // A refresh-safe snapshot is intentionally smaller than the export ceiling.
+    // Reserve metadata headroom so the candidate is never accepted only to fail
+    // its mandatory background persistence write afterwards.
+    if (this.observationBytes + byteLength(observation) + 65_536 > LIMITS.maxRefreshRecoveryBytes) {
+      return void this.limitStop('REFRESH_RECOVERY_LIMIT');
+    }
     this.seenSignatures.set(node, signature);
     this.observations.push(observation);
     this.observationBytes = nextBytes;
     this.promotionCounts[parsed.promotion] += 1;
-    this.identityIndexes.set(identity, appearance);
+    // A text-only fallback is an alias only when no stable X identity has arrived;
+    // otherwise repeated boilerplate in separate posts must not collapse records.
+    (identities.length > 1 ? identities.slice(0, -1) : identities).forEach((candidate) => this.identityIndexes.set(candidate, appearance));
     this.event('OBSERVATION_ACCEPTED', 'COUNT_ONLY');
-    this.renderIndicator();
+    this.persist();
 
     if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) return void this.hardStop('INJECTION_CONTENT');
     if (this.ambiguousCount / this.observations.length > LIMITS.maxAmbiguityRatio && this.observations.length >= 20) return void this.hardStop('AMBIGUITY_LIMIT');
@@ -408,13 +773,13 @@ export class LiveCollector {
       this.detach();
       this.state = 'PAUSED_HIDDEN';
       this.event('PAUSED_DOCUMENT_HIDDEN');
-      this.renderIndicator();
+      this.persist();
     } else if (document.visibilityState === 'visible' && this.state === 'PAUSED_HIDDEN') {
       const challenge = challengeCode();
       if (challenge) return void this.hardStop(challenge);
       this.state = 'CAPTURING';
       this.attach();
-      this.renderIndicator();
+      this.persist();
     }
   }
 
@@ -424,7 +789,7 @@ export class LiveCollector {
     this.stoppedAt = Date.now();
     this.state = 'LIMIT_REACHED';
     this.event(code);
-    this.renderIndicator();
+    this.persist();
   }
 
   private hardStop(code: string): void {
@@ -434,27 +799,90 @@ export class LiveCollector {
     this.stoppedAt = Date.now();
     this.state = 'ERROR';
     this.event(safe);
-    this.renderIndicator();
+    this.persist();
   }
 
-  private renderIndicator(): void {
-    if (!this.indicator) {
-      const host = document.createElement('div');
-      host.id = 'xfi-lifecycle-indicator';
-      host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;pointer-events:none';
-      const shadow = host.attachShadow({ mode: 'closed' });
-      const label = document.createElement('div');
-      label.setAttribute('role', 'status');
-      label.setAttribute('aria-live', 'polite');
-      label.style.cssText = 'font:600 12px/1.2 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 10px;border-radius:999px;background:#111827;color:#fff;border:1px solid #4b5563;box-shadow:0 4px 16px rgba(0,0,0,.25)';
-      shadow.append(label);
-      document.documentElement.append(host);
-      this.indicator = label;
-    }
-    const status = this.status();
-    this.indicator.textContent = `XFI ${status.state.replace('_', ' ')} · ${status.observationCount}`;
-    this.indicator.style.background = status.state === 'ERROR' ? '#991b1b' : status.state === 'CAPTURING' ? '#065f46' : '#111827';
+}
+
+class FloatingPanel {
+  private readonly host = document.createElement('div');
+  private readonly status = document.createElement('p');
+  private readonly buttons = new Map<string, HTMLButtonElement>();
+  private timer: number | null = null;
+  private drag: { x: number; y: number; left: number; top: number } | null = null;
+
+  constructor(private readonly collector: LiveCollector, private readonly onClose: () => void) {
+    this.host.id = 'xfi-floating-panel-host';
+    this.host.setAttribute('data-xfi-panel', '');
+    const style = document.createElement('style');
+    style.textContent = `
+      #xfi-floating-panel-host { all: initial; } #xfi-floating-panel-host .xfi-panel { position: fixed; z-index: 2147483647; top: 76px; right: 20px; width: 286px; color: #e5edf9; background: #0b1220; border: 1px solid #3b4b65; border-radius: 12px; box-shadow: 0 12px 34px #0008; font: 13px/1.35 system-ui, sans-serif; }
+      #xfi-floating-panel-host header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #263247; cursor: move; user-select: none; } #xfi-floating-panel-host h2 { flex: 1; margin: 0; font-size: 14px; } #xfi-floating-panel-host p { margin: 0; } #xfi-floating-panel-host .status { padding: 9px 12px; color: #b8c5d9; } #xfi-floating-panel-host .counts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0 12px 10px; } #xfi-floating-panel-host .counts span { padding: 7px; border-radius: 7px; background: #172033; } #xfi-floating-panel-host .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 0 12px 12px; } #xfi-floating-panel-host button { min-height: 34px; color: #e5edf9; border: 1px solid #3b4b65; border-radius: 7px; background: #172033; font: 650 12px/1.2 inherit; cursor: pointer; } #xfi-floating-panel-host button:hover:not(:disabled) { border-color: #7dd3fc; } #xfi-floating-panel-host button:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; } #xfi-floating-panel-host button:disabled { opacity: .45; cursor: default; } #xfi-floating-panel-host .wide { grid-column: 1 / -1; } #xfi-floating-panel-host .danger { color: #fecaca; border-color: #7f1d1d; } #xfi-floating-panel-host .close { min-height: 27px; min-width: 27px; padding: 0; background: transparent; }
+    `;
+    const panel = document.createElement('section');
+    panel.className = 'panel'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'X Feed Intelligence controls'); panel.tabIndex = -1;
+    const header = document.createElement('header');
+    const title = document.createElement('h2'); title.textContent = 'X Feed Intelligence';
+    const close = this.button('close', 'Close panel', () => this.close()); close.className = 'close'; close.setAttribute('aria-label', 'Close X Feed Intelligence controls');
+    header.append(title, close);
+    this.status.className = 'status'; this.status.setAttribute('role', 'status'); this.status.setAttribute('aria-live', 'polite');
+    const counts = document.createElement('div'); counts.className = 'counts'; counts.setAttribute('aria-label', 'Collection counts');
+    for (const label of ['visible cards', 'organic', 'promoted', 'review']) { const item = document.createElement('span'); item.dataset.count = label; counts.append(item); }
+    const controls = document.createElement('div'); controls.className = 'controls'; controls.setAttribute('aria-label', 'Collection controls');
+    controls.append(
+      this.button('start', 'Start visible capture', async () => this.run(() => this.collector.start())),
+      this.button('stop', 'Stop', async () => this.run(() => this.collector.stop())),
+      this.button('scroll-start', 'Start careful auto-scroll', () => this.run(() => this.collector.startScroll())),
+      this.button('scroll-stop', 'Stop auto-scroll', () => this.run(() => this.collector.stopScroll())),
+      this.button('export', 'Export private JSON', () => this.export(), 'wide'),
+      this.button('discard', 'Discard session', async () => this.run(() => this.collector.discard()), 'wide danger'),
+    );
+    panel.append(header, this.status, counts, controls); this.host.append(style, panel); document.documentElement.append(this.host);
+    header.addEventListener('pointerdown', (event) => this.beginDrag(event, panel));
+    panel.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); this.close(); } });
+    this.refresh(); this.timer = window.setInterval(() => this.refresh(), 1000); panel.focus();
   }
+
+  private button(id: string, label: string, action: () => void | Promise<void>, className = ''): HTMLButtonElement {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.className = className; button.addEventListener('click', () => void action()); this.buttons.set(id, button); return button;
+  }
+
+  private async run(action: () => CollectorResponse | Promise<CollectorResponse>): Promise<void> {
+    const response = await action(); this.status.textContent = response.ok ? 'Updated.' : `Action blocked: ${response.error || 'unknown error'}`; this.refresh();
+  }
+
+  private async export(): Promise<void> {
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_PANEL_SAVE_EXPORT' }) as { ok?: boolean; sessionId?: string; error?: string };
+      this.status.textContent = reply?.ok ? `Save dialog opened for ${reply.sessionId}. Choose Documents.` : `Export blocked: ${reply?.error || 'unknown error'}`;
+    } catch { this.status.textContent = 'Export blocked: background unavailable.'; }
+    this.refresh();
+  }
+
+  private refresh(): void {
+    const snapshot = this.collector.status();
+    const values = [snapshot.observationCount, snapshot.organicCount, snapshot.promotedCount, snapshot.ambiguousCount];
+    const nodes = (this.status.parentElement?.querySelectorAll<HTMLElement>('[data-count]') || []);
+    nodes.forEach((node, index) => { node.textContent = `${values[index]} ${node.dataset.count}`; });
+    if (!this.status.textContent || this.status.textContent === 'Updated.') this.status.textContent = `${snapshot.state.replace('_', ' ')} · ${snapshot.autoScroll ? 'careful auto-scroll on' : 'manual scroll'}`;
+    this.buttons.get('start')!.disabled = !['ARMED', 'STOPPED'].includes(snapshot.pendingState || snapshot.state);
+    this.buttons.get('stop')!.disabled = !['CAPTURING', 'PAUSED_HIDDEN'].includes(snapshot.pendingState || snapshot.state);
+    this.buttons.get('scroll-start')!.disabled = snapshot.state !== 'CAPTURING' || snapshot.autoScroll;
+    this.buttons.get('scroll-stop')!.disabled = !snapshot.autoScroll;
+    this.buttons.get('export')!.disabled = snapshot.observationCount === 0;
+    this.buttons.get('discard')!.disabled = snapshot.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(snapshot.state);
+  }
+
+  private beginDrag(event: PointerEvent, panel: HTMLElement): void {
+    if ((event.target as Element).closest('button')) return;
+    const bounds = panel.getBoundingClientRect(); this.drag = { x: event.clientX, y: event.clientY, left: bounds.left, top: bounds.top };
+    panel.setPointerCapture?.(event.pointerId);
+    const move = (next: PointerEvent) => { if (!this.drag) return; panel.style.right = 'auto'; panel.style.left = `${Math.max(4, Math.min(innerWidth - bounds.width - 4, this.drag.left + next.clientX - this.drag.x))}px`; panel.style.top = `${Math.max(4, Math.min(innerHeight - bounds.height - 4, this.drag.top + next.clientY - this.drag.y))}px`; };
+    const end = () => { this.drag = null; panel.removeEventListener('pointermove', move); panel.removeEventListener('pointerup', end); panel.removeEventListener('pointercancel', end); };
+    panel.addEventListener('pointermove', move); panel.addEventListener('pointerup', end); panel.addEventListener('pointercancel', end);
+  }
+
+  close(): void { if (this.timer !== null) window.clearInterval(this.timer); this.host.remove(); this.onClose(); }
 }
 
 export default defineContentScript({
@@ -464,21 +892,30 @@ export default defineContentScript({
   noScriptStartedPostMessage: true,
   main() {
     const collector = new LiveCollector();
+    let panel: FloatingPanel | null = null;
     browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
       if (sender.id !== browser.runtime.id || !message || typeof message !== 'object' || !('type' in message)) return undefined;
       const command = message as CollectorCommand;
-      switch (command.type) {
-        case 'XFI_STATUS': sendResponse(collector.messageStatus()); return undefined;
-        case 'XFI_START': sendResponse(collector.start()); return undefined;
-        case 'XFI_STOP': sendResponse(collector.stop()); return undefined;
-        case 'XFI_EXPORT':
-          void collector.exportPacket().then(sendResponse, () => sendResponse({ ok: false, status: collector.status(), error: 'EXPORT_FAILED' }));
-          return true;
-        case 'XFI_EXPORT_CHUNK': sendResponse(collector.exportChunk(command.exportId, command.index)); return undefined;
-        case 'XFI_EXPORT_RELEASE': sendResponse(collector.releaseExport(command.exportId)); return undefined;
-        case 'XFI_DISCARD': sendResponse(collector.discard()); return undefined;
-        default: return undefined;
-      }
+      void collector.ready().then(async () => {
+        switch (command.type) {
+          case 'XFI_STATUS': sendResponse(collector.messageStatus()); break;
+          case 'XFI_START': sendResponse(await collector.start()); break;
+          case 'XFI_SCROLL_START': sendResponse(collector.startScroll()); break;
+          case 'XFI_SCROLL_STOP': sendResponse(collector.stopScroll()); break;
+          case 'XFI_STOP': sendResponse(await collector.stop()); break;
+          case 'XFI_EXPORT': sendResponse(await collector.exportPacket()); break;
+          case 'XFI_EXPORT_CHUNK': sendResponse(collector.exportChunk(command.exportId, command.index)); break;
+          case 'XFI_EXPORT_RELEASE': sendResponse(collector.releaseExport(command.exportId)); break;
+          case 'XFI_DISCARD': sendResponse(await collector.discard()); break;
+          case 'XFI_PANEL_TOGGLE':
+            if (panel) { panel.close(); panel = null; }
+            else panel = new FloatingPanel(collector, () => { panel = null; });
+            sendResponse({ ok: true, status: collector.status(), panelOpen: panel !== null });
+            break;
+          default: return;
+        }
+      }).catch(() => sendResponse({ ok: false, status: collector.status(), error: 'COLLECTOR_COMMAND_FAILED' }));
+      return true;
     });
   },
 });

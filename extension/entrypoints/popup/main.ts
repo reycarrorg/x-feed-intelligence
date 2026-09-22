@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { CollectorCommand, CollectorResponse, CollectorStatus, LifecycleState } from '../../lib/contracts';
+import { reconcileOwnedExports } from '../../lib/export-retention';
 
 const EXACT_PATTERN = 'https://x.com/*';
 
@@ -12,11 +13,13 @@ const elements = {
   ambiguous: document.querySelector<HTMLElement>('#ambiguous')!,
   arm: document.querySelector<HTMLButtonElement>('#arm')!,
   start: document.querySelector<HTMLButtonElement>('#start')!,
+  scrollStart: document.querySelector<HTMLButtonElement>('#scroll-start')!,
+  scrollStop: document.querySelector<HTMLButtonElement>('#scroll-stop')!,
+  panel: document.querySelector<HTMLButtonElement>('#panel')!,
   stop: document.querySelector<HTMLButtonElement>('#stop')!,
   export: document.querySelector<HTMLButtonElement>('#export')!,
   discard: document.querySelector<HTMLButtonElement>('#discard')!,
   revoke: document.querySelector<HTMLButtonElement>('#revoke')!,
-  sidebar: document.querySelector<HTMLButtonElement>('#sidebar')!,
 };
 
 let activeTab: { id: number } | null = null;
@@ -26,23 +29,20 @@ let latestStatus: CollectorStatus | null = null;
 let exporting = false;
 let refreshing = false;
 let lastRefreshDescription = '';
-const firefoxSidebar = (browser as typeof browser & { sidebarAction?: { open: () => Promise<void>; isOpen: (details: Record<string, never>) => Promise<boolean> } }).sidebarAction;
-
-elements.sidebar.hidden = !firefoxSidebar;
-if (firefoxSidebar) void firefoxSidebar.isOpen({}).then((open) => { elements.sidebar.hidden = open; }).catch(() => { elements.sidebar.hidden = false; });
 
 function setMessage(value: string): void {
   elements.message.textContent = value;
 }
 
 function emptyStatus(state: LifecycleState = permissionGranted ? 'ARMED' : 'INACTIVE'): CollectorStatus {
-  return { state, observationCount: 0, organicCount: 0, promotedCount: 0, ambiguousCount: 0, hardStopCode: null, startedAt: null, elapsedSeconds: 0, autoScroll: false, networkRequests: 0, accountActions: 0 };
+  return { state, pendingState: null, pendingObservationCount: 0, pendingChanges: false, pendingPersistenceFailure: false, observationCount: 0, organicCount: 0, promotedCount: 0, ambiguousCount: 0, hardStopCode: null, startedAt: null, elapsedSeconds: 0, autoScroll: false, scrollPauseReason: null, networkRequests: 0, accountActions: 0 };
 }
 
 function render(status: CollectorStatus): void {
   latestStatus = status;
-  elements.state.textContent = status.state.replace('_', ' ');
-  elements.state.className = `state ${status.state === 'CAPTURING' ? 'capturing' : status.state === 'ERROR' ? 'error' : ''}`;
+  const activeState = status.pendingState || status.state;
+  elements.state.textContent = status.pendingState ? `${status.state.replace('_', ' ')} (${status.pendingState.replace('_', ' ')} pending)` : status.state.replace('_', ' ');
+  elements.state.className = `state ${activeState === 'CAPTURING' ? 'capturing' : activeState === 'ERROR' ? 'error' : ''}`;
   elements.total.textContent = String(status.observationCount);
   elements.organic.textContent = String(status.organicCount);
   elements.promoted.textContent = String(status.promotedCount);
@@ -50,11 +50,14 @@ function render(status: CollectorStatus): void {
 
   elements.arm.hidden = permissionGranted;
   elements.arm.disabled = !activeTab;
-  elements.start.disabled = !confirmedXTab || !permissionGranted || !['ARMED', 'STOPPED'].includes(status.state);
-  elements.stop.disabled = status.state !== 'CAPTURING' && status.state !== 'PAUSED_HIDDEN';
+  elements.start.disabled = !confirmedXTab || !permissionGranted || !['ARMED', 'STOPPED'].includes(activeState);
+  elements.stop.disabled = activeState !== 'CAPTURING' && activeState !== 'PAUSED_HIDDEN';
+  elements.scrollStart.disabled = activeState !== 'CAPTURING' || status.autoScroll;
+  elements.scrollStop.disabled = !status.autoScroll;
+  elements.panel.disabled = !confirmedXTab || !permissionGranted;
   elements.export.disabled = exporting || status.observationCount === 0;
-  elements.discard.disabled = status.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(status.state);
-  elements.revoke.disabled = !permissionGranted || ['CAPTURING', 'PAUSED_HIDDEN'].includes(status.state);
+  elements.discard.disabled = status.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(activeState);
+  elements.revoke.disabled = !permissionGranted || ['CAPTURING', 'PAUSED_HIDDEN'].includes(activeState);
 }
 
 async function send(command: CollectorCommand, tabId = activeTab?.id): Promise<CollectorResponse> {
@@ -70,8 +73,7 @@ async function refresh(): Promise<void> {
   if (refreshing) return;
   refreshing = true;
   try {
-    // A Firefox sidebar belongs to its own browser window. Chromium can expose
-    // an action popup as the current window; fall back to the last normal one.
+    // An action popup can be its own browser window; fall back to the last normal one.
     const currentWindow = await browser.windows.getCurrent();
     const window = currentWindow.type === 'normal' ? currentWindow : await browser.windows.getLastFocused({ windowTypes: ['normal'] });
     const tabs = window.id == null ? [] : await browser.tabs.query({ active: true, windowId: window.id });
@@ -94,7 +96,7 @@ async function refresh(): Promise<void> {
       if (!response.ok || !response.status) throw new Error('COLLECTOR_NOT_LOADED');
       confirmedXTab = true;
       render(response.status);
-      describe(response.status.hardStopCode ? `Stopped safely: ${response.status.hardStopCode}` : response.status.state === 'CAPTURING' ? 'Capturing visible cards while you scroll normally.' : 'Ready. Collection starts only when you press Start.');
+      describe(response.status.pendingPersistenceFailure ? 'Storage failed; capture stopped in this page. Recovery blocking is unconfirmed, so export the saved count now.' : response.status.hardStopCode === 'RETENTION_FAILURE' ? 'Storage failed; capture is blocked. Only the saved count is available to export.' : response.status.pendingObservationCount > 0 ? `${response.status.pendingObservationCount} card(s) pending storage; only the saved count survives refresh.` : response.status.pendingState ? `${response.status.pendingState.replace('_', ' ')} pending storage; wait for confirmation before refreshing.` : response.status.pendingChanges ? 'Updates pending storage; only the saved version survives refresh.' : response.status.hardStopCode === 'REFRESH_RECOVERY_LIMIT' ? 'Stopped before the 9 MiB refresh-safe limit. Export this private packet before starting another session.' : response.status.hardStopCode ? `Stopped safely: ${response.status.hardStopCode}` : response.status.autoScroll && response.status.scrollPauseReason === 'NO_SCROLL_MOVEMENT' ? 'Careful auto-scroll found no movement and is slowing down; it stops if progress does not resume.' : response.status.autoScroll && response.status.scrollPauseReason === 'NESTED_FEED_SCROLL' ? 'Careful auto-scroll is advancing the visible feed container.' : response.status.autoScroll ? 'Careful auto-scroll is advancing the page while visible cards are captured.' : response.status.state === 'CAPTURING' ? 'Capturing visible cards; scroll manually or opt in to careful auto-scroll.' : 'Ready. Collection starts only when you press Start.');
     } catch {
       render(emptyStatus('INACTIVE'));
       describe('No X collector is loaded in the active tab. Open or reload https://x.com; XFI will reconnect.');
@@ -114,11 +116,6 @@ function describe(value: string): void {
   }
 }
 
-elements.sidebar.addEventListener('click', () => {
-  // Firefox requires this call directly in the user-gesture handler.
-  void firefoxSidebar?.open().catch(() => setMessage('Firefox could not open the sidebar. Use View > Sidebar > X Feed Intelligence.'));
-});
-
 elements.arm.addEventListener('click', async () => {
   permissionGranted = await browser.permissions.request({ origins: [EXACT_PATTERN] });
   render(emptyStatus(permissionGranted ? 'ARMED' : 'INACTIVE'));
@@ -133,6 +130,25 @@ elements.start.addEventListener('click', async () => {
   } catch {
     setMessage('Reload this X tab once so the reviewed collector can load, then try again.');
   }
+});
+
+elements.scrollStart.addEventListener('click', async () => {
+  try { const response = await send({ type: 'XFI_SCROLL_START' }); render(response.status);
+    setMessage(response.ok ? 'Careful auto-scroll started. It stops on hidden tab, challenge, limits, or no progress.' : `Auto-scroll blocked: ${response.error || 'unknown error'}`);
+  } catch { setMessage('Return to the collection tab before starting auto-scroll.'); }
+});
+
+elements.scrollStop.addEventListener('click', async () => {
+  try { const response = await send({ type: 'XFI_SCROLL_STOP' }); render(response.status); setMessage('Auto-scroll stopped; visible capture may continue.'); }
+  catch { setMessage('Could not reach the collection tab.'); }
+});
+
+elements.panel.addEventListener('click', async () => {
+  try {
+    const response = await send({ type: 'XFI_PANEL_TOGGLE' });
+    render(response.status);
+    setMessage(response.panelOpen ? 'Controls are now on this X page. Press Escape or Close panel to hide them.' : 'In-page controls closed.');
+  } catch { setMessage('Reload this X tab once so the reviewed collector can load, then try again.'); }
 });
 
 elements.stop.addEventListener('click', async () => {
@@ -151,37 +167,14 @@ elements.export.addEventListener('click', async () => {
   if (!tabId) return void setMessage('Select an X tab before exporting.');
   exporting = true;
   elements.export.disabled = true;
-  let exportId: string | null = null;
   try {
-    setMessage('Preparing local JSON export…');
-    const response = await send({ type: 'XFI_EXPORT' }, tabId);
-    render(response.status);
-    if (!response.ok || !response.export) throw new Error(response.error || 'EXPORT_FAILED');
-    const { id, sessionId, chunkCount, totalBytes } = response.export;
-    exportId = id;
-    const chunks: string[] = [];
-    let receivedBytes = 0;
-    for (let index = 0; index < chunkCount; index += 1) {
-      const part = await send({ type: 'XFI_EXPORT_CHUNK', exportId: id, index }, tabId);
-      if (!part.ok || typeof part.chunk !== 'string') throw new Error(part.error || 'EXPORT_CHUNK_FAILED');
-      chunks.push(part.chunk);
-      receivedBytes += new TextEncoder().encode(part.chunk).length;
-    }
-    if (receivedBytes !== totalBytes) throw new Error('EXPORT_SIZE_MISMATCH');
-    const blob = new Blob([...chunks, '\n'], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `xfi-${sessionId}.json`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    setMessage('Private JSON exported locally. It has not been uploaded or analyzed yet.');
+    setMessage('Preparing local JSON export and Save dialog…');
+    const reply = await browser.runtime.sendMessage({ type: 'XFI_SAVE_EXPORT', tabId }) as { ok: boolean; sessionId?: string; error?: string };
+    if (!reply?.ok) throw new Error(reply?.error || 'EXPORT_FAILED');
+    setMessage(`Save dialog opened for export ${reply.sessionId}. Choose Documents. Older files are recycled only after a new tracked save completes.`);
   } catch (error) {
     setMessage(`Export blocked: ${error instanceof Error ? error.message : 'unknown error'}`);
   } finally {
-    if (exportId) {
-      try { await send({ type: 'XFI_EXPORT_RELEASE', exportId }, tabId); } catch { /* Tab may have closed. */ }
-    }
     exporting = false;
     elements.export.disabled = (latestStatus?.observationCount || 0) === 0;
   }
@@ -205,5 +198,6 @@ elements.revoke.addEventListener('click', async () => {
 });
 
 void refresh();
+void reconcileOwnedExports().then(({ warning }) => { if (warning) setMessage(warning); }).catch(() => setMessage('Could not verify saved exports; no files were recycled.'));
 const refreshTimer = window.setInterval(() => void refresh(), 1000);
 window.addEventListener('pagehide', () => window.clearInterval(refreshTimer), { once: true });

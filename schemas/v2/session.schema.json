@@ -14,11 +14,11 @@
     "origin": {"const": "https://x.com"},
     "collector_version": {"type": "string", "minLength": 1, "maxLength": 64},
     "privacy_profile": {"const": "default_local"},
-    "collection_mode": {"const": "manual_scroll"},
+    "collection_mode": {"enum": ["manual_scroll", "assisted_scroll"]},
     "limits": {
       "oneOf": [
         {"type": "object", "additionalProperties": false, "required": ["max_candidates", "max_duration_seconds", "max_packet_bytes"], "properties": {"max_candidates": {"const": 100}, "max_duration_seconds": {"const": 900}, "max_packet_bytes": {"const": 5242880}}},
-        {"type": "object", "additionalProperties": false, "required": ["max_candidates", "max_duration_seconds", "max_packet_bytes"], "properties": {"max_candidates": {"const": 10000}, "max_duration_seconds": {"const": 28800}, "max_packet_bytes": {"const": 134217728}}}
+        {"type": "object", "additionalProperties": false, "required": ["max_candidates", "max_duration_seconds", "max_packet_bytes"], "properties": {"max_candidates": {"const": 10000}, "max_duration_seconds": {"const": 28800}, "max_packet_bytes": {"enum": [134217728, 15728640]}}}
       ]
     }
   }

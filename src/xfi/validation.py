@@ -13,7 +13,7 @@ from .canonical import canonical_bytes, digest, relationship_target_ids
 from .errors import ValidationError
 
 MAX_PACKET_BYTES = 5_242_880
-MAX_LIVE_PACKET_BYTES = 134_217_728
+MAX_LIVE_PACKET_BYTES = 134_217_728  # Legacy v2 packets remain readable; new capture limit is 15 MiB.
 MAX_DEPTH = 64
 SUPPORTED_SCHEMA_VERSIONS = {"1.0.0": "v1", "2.0.0": "v2"}
 SENSITIVE_KEYS = re.compile(r"(?i)(authorization|auth[_-]?token|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|bearer|cookie|csrf|password|session[_-]?(?:token|storage)|local[_-]?storage|browser[_-]?profile|direct[_-]?messages?|notifications?|payment|har)")
