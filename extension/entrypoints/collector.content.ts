@@ -77,6 +77,14 @@ export class LiveCollector {
   private ambiguousCount = 0;
   private promotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
   private observationBytes = 0;
+  private completedCount = 0;
+  private partNumber = 1;
+  private completedPromotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
+  private completedAmbiguousCount = 0;
+  private stopAfterRollover = false;
+  private rollingOver = false;
+  private resumeScrollAfterRollover = false;
+  private recentPartIdentities = new Set<string>();
   private exportSnapshot: { id: string; sessionId: string; json: string; chunks: Array<[number, number]> } | null = null;
   private autoScroll = false;
   private assistedEver = false;
@@ -86,7 +94,13 @@ export class LiveCollector {
   private lastScrollProgress = Date.now();
   private lastScrollY = 0;
   private lastScrollObservationCount = 0;
-  private scrollDelay = 1800;
+  private scrollDelay = 850;
+  private scrollStalls = 0;
+  private readonly stopScrollOnInput = (event: Event): void => {
+    if (!event.isTrusted || !this.autoScroll) return;
+    this.stopScrollInternal('USER_INPUT');
+    void this.persist();
+  };
   private revision = 0;
   private committedSnapshot: CollectorSessionSnapshot | null = null;
   private queuedSnapshot: CollectorSessionSnapshot | null = null;
@@ -126,8 +140,20 @@ export class LiveCollector {
       this.ambiguousCount = snapshot.ambiguousCount;
       this.promotionCounts = snapshot.promotionCounts;
       this.observationBytes = snapshot.observationBytes;
+      this.completedCount = snapshot.completedCount || 0;
+      this.partNumber = snapshot.partNumber || 1;
+      this.completedPromotionCounts = snapshot.completedPromotionCounts || { organic: 0, promoted: 0, ambiguous: 0 };
+      this.completedAmbiguousCount = snapshot.completedAmbiguousCount || 0;
+      this.stopAfterRollover = snapshot.stopAfterRollover || false;
       this.assistedEver = snapshot.assistedEver;
       this.scrollPauseReason = snapshot.scrollPauseReason;
+      if (this.state === 'ROLLING_OVER') {
+        this.state = 'ERROR';
+        this.stopCode = 'AUTO_EXPORT_INTERRUPTED';
+        this.stoppedAt = Date.now();
+        this.event('AUTO_EXPORT_INTERRUPTED');
+        void this.persist();
+      }
       if (reply?.blocked) {
         this.blockedConfirmed = true;
         this.state = 'ERROR';
@@ -164,7 +190,9 @@ export class LiveCollector {
     return { revision: ++this.revision, state: this.state, observations: this.observations, events: this.events, sessionId: this.sessionId,
       startedAt: this.startedAt, stoppedAt: this.stoppedAt, stopCode: this.stopCode, ambiguousCount: this.ambiguousCount,
       promotionCounts: this.promotionCounts, observationBytes: this.observationBytes, assistedEver: this.assistedEver,
-      scrollPauseReason: this.scrollPauseReason };
+      scrollPauseReason: this.scrollPauseReason, completedCount: this.completedCount, partNumber: this.partNumber,
+      completedPromotionCounts: this.completedPromotionCounts, completedAmbiguousCount: this.completedAmbiguousCount,
+      stopAfterRollover: this.stopAfterRollover };
   }
 
   private persist(): Promise<boolean> {
@@ -252,9 +280,11 @@ export class LiveCollector {
       pendingChanges: !this.blockedConfirmed && this.revision > (committed?.revision || this.clearedRevision),
       pendingPersistenceFailure: this.state === 'ERROR' && this.stopCode === 'RETENTION_FAILURE' && !this.blockedConfirmed,
       observationCount: committed?.observations.length || 0,
-      organicCount: committed?.promotionCounts.organic || 0,
-      promotedCount: committed?.promotionCounts.promoted || 0,
-      ambiguousCount: (committed?.ambiguousCount || 0) + (committed?.promotionCounts.ambiguous || 0),
+      totalObservationCount: (committed?.completedCount || 0) + (committed?.observations.length || 0),
+      partNumber: committed?.partNumber || 1,
+      organicCount: (committed?.completedPromotionCounts?.organic || 0) + (committed?.promotionCounts.organic || 0),
+      promotedCount: (committed?.completedPromotionCounts?.promoted || 0) + (committed?.promotionCounts.promoted || 0),
+      ambiguousCount: (committed?.completedAmbiguousCount || 0) + (committed?.ambiguousCount || 0) + (committed?.promotionCounts.ambiguous || 0),
       hardStopCode: committedStopCode,
       startedAt: startedAt === null ? null : new Date(startedAt).toISOString(),
       elapsedSeconds: startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000)),
@@ -277,6 +307,12 @@ export class LiveCollector {
       return this.response(false, challenge);
     }
     this.resetSession();
+    this.completedCount = 0;
+    this.partNumber = 1;
+    this.completedPromotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
+    this.completedAmbiguousCount = 0;
+    this.stopAfterRollover = false;
+    this.recentPartIdentities.clear();
     this.state = 'CAPTURING';
     this.startedAt = Date.now();
     this.sessionId = randomId('live-dom');
@@ -288,6 +324,11 @@ export class LiveCollector {
   }
 
   async stop(): Promise<CollectorResponse> {
+    if (this.state === 'ROLLING_OVER') {
+      this.stopAfterRollover = true;
+      const saved = await this.persist();
+      return this.response(saved, saved ? undefined : 'SESSION_STORAGE_WRITE_FAILED');
+    }
     if (!['CAPTURING', 'PAUSED_HIDDEN', 'ARMED'].includes(this.state)) return this.response(false, 'INVALID_STATE');
     this.detach();
     this.state = 'STOPPED';
@@ -310,7 +351,11 @@ export class LiveCollector {
     this.lastScrollProgress = Date.now();
     this.lastScrollY = window.scrollY;
     this.lastScrollObservationCount = this.observations.length;
-    this.scrollDelay = 1800;
+    this.scrollDelay = 850;
+    this.scrollStalls = 0;
+    for (const type of ['pointermove', 'mousedown', 'wheel', 'touchstart', 'keydown']) {
+      document.addEventListener(type, this.stopScrollOnInput, { capture: true, passive: true });
+    }
     this.event('ASSISTED_SCROLL_STARTED');
     this.persist();
     this.scheduleScroll();
@@ -326,6 +371,9 @@ export class LiveCollector {
   private stopScrollInternal(reason: string): void {
     if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer);
     this.scrollTimer = null;
+    for (const type of ['pointermove', 'mousedown', 'wheel', 'touchstart', 'keydown']) {
+      document.removeEventListener(type, this.stopScrollOnInput, true);
+    }
     if (this.autoScroll) this.event('ASSISTED_SCROLL_STOPPED', reason);
     this.autoScroll = false;
     this.scrollPauseReason = reason;
@@ -337,18 +385,18 @@ export class LiveCollector {
   }
 
   private scrollTarget(): HTMLElement | null {
-    const selector = 'main, [role="main"], [data-testid="primaryColumn"]';
     const eligible = (element: HTMLElement): boolean => {
       const style = getComputedStyle(element);
-      return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight;
+      return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 8;
     };
     for (const post of Array.from(document.querySelectorAll(SELECTORS.post))) {
       if (post.parentElement?.closest(SELECTORS.post) || viewportVisibilityRatio(post) < LIMITS.minimumVisibilityRatio) continue;
       for (let ancestor = post.parentElement; ancestor; ancestor = ancestor.parentElement) {
-        if (ancestor instanceof HTMLElement && ancestor.matches(selector) && eligible(ancestor)) return ancestor;
+        if (ancestor instanceof HTMLElement && eligible(ancestor)) return ancestor;
       }
     }
-    return null;
+    const root = document.scrollingElement;
+    return root instanceof HTMLElement && root.scrollHeight > window.innerHeight + 8 ? root : null;
   }
 
   private scrollTick(): void {
@@ -358,10 +406,14 @@ export class LiveCollector {
     if (challenge) return void this.hardStop(challenge);
     if (this.state !== 'CAPTURING' || document.visibilityState !== 'visible') return void this.stopScrollInternal('HIDDEN_OR_STOPPED');
     const now = Date.now();
-    if (now - this.lastScrollProgress > 20_000) return void this.limitStop('AUTO_SCROLL_NO_PROGRESS');
+    if (now - this.lastScrollProgress > 30_000) {
+      this.stopScrollInternal('AUTO_SCROLL_NO_PROGRESS');
+      void this.persist();
+      return;
+    }
     // Wait for visible cards to hydrate and process before moving the viewport.
-    if (now - this.lastDomChange < 700) {
-      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.25));
+    if (now - this.lastDomChange < 450 || this.status().pendingObservationCount > 0) {
+      this.scrollDelay = Math.min(2200, Math.round(this.scrollDelay * 1.15));
       return void this.scheduleScroll();
     }
     document.querySelectorAll(SELECTORS.post).forEach((card) => {
@@ -375,42 +427,30 @@ export class LiveCollector {
     if (gained > 0) {
       this.lastScrollProgress = now;
       this.lastScrollObservationCount = this.observations.length;
-      this.scrollDelay = Math.max(1200, Math.round(this.scrollDelay * 0.9));
+      this.scrollDelay = Math.max(650, Math.round(this.scrollDelay * 0.88));
     } else {
-      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.25));
+      this.scrollDelay = Math.min(2200, Math.round(this.scrollDelay * 1.12));
     }
-    const step = Math.min(120, Math.max(60, Math.floor(innerHeight * 0.12)));
+    const step = Math.min(160, Math.max(80, Math.floor(innerHeight * 0.16)));
     const target = this.scrollTarget();
     if (target) {
       const oldTop = target.scrollTop;
-      if (oldTop + target.clientHeight >= target.scrollHeight - 2) return void this.limitStop('AUTO_SCROLL_END_OF_FEED');
-      if (typeof target.scrollBy !== 'function') {
-        this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
-        this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
-        this.scheduleScroll();
-        return;
-      }
-      target.scrollBy({ top: step, behavior: 'instant' });
+      target.scrollTop = oldTop + step;
       if (target.scrollTop <= oldTop) {
-        this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
-        this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
+        this.scrollStalls += 1;
+        this.scrollPauseReason = oldTop + target.clientHeight >= target.scrollHeight - 2 ? 'END_OF_FEED' : 'NO_SCROLL_MOVEMENT';
+        if (this.scrollStalls >= 3) { this.stopScrollInternal(this.scrollPauseReason); void this.persist(); return; }
+        this.scrollDelay = Math.min(2200, Math.round(this.scrollDelay * 1.3));
       } else {
-        this.scrollPauseReason = 'NESTED_FEED_SCROLL';
+        this.scrollStalls = 0;
+        this.scrollPauseReason = target === document.scrollingElement ? 'DOCUMENT_SCROLL' : 'NESTED_FEED_SCROLL';
       }
       this.lastScrollY = target.scrollTop;
       this.scheduleScroll();
       return;
     }
-    const oldY = window.scrollY;
-    const documentHeight = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0);
-    if (documentHeight > window.innerHeight && oldY + window.innerHeight >= documentHeight - 2) return void this.limitStop('AUTO_SCROLL_END_OF_FEED');
-    window.scrollBy({ top: step, behavior: 'instant' });
-    if (window.scrollY <= oldY && window.scrollY <= this.lastScrollY) {
-      this.scrollPauseReason = 'NO_SCROLL_MOVEMENT';
-      this.scrollDelay = Math.min(5000, Math.round(this.scrollDelay * 1.5));
-    } else this.scrollPauseReason = 'WINDOW_SCROLL';
-    this.lastScrollY = window.scrollY;
-    this.scheduleScroll();
+    this.stopScrollInternal('NO_SCROLLABLE_FEED');
+    void this.persist();
   }
 
   async discard(): Promise<CollectorResponse> {
@@ -424,6 +464,12 @@ export class LiveCollector {
       return this.response(false, 'SESSION_STORAGE_WRITE_FAILED');
     }
     this.resetSession();
+    this.completedCount = 0;
+    this.partNumber = 1;
+    this.completedPromotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
+    this.completedAmbiguousCount = 0;
+    this.stopAfterRollover = false;
+    this.recentPartIdentities.clear();
     this.committedSnapshot = null;
     this.exportSnapshot = null;
     this.blockedConfirmed = false;
@@ -489,10 +535,65 @@ export class LiveCollector {
   releaseExport(id: string): CollectorResponse {
     if (this.exportSnapshot?.id !== id) return this.response(false, 'INVALID_EXPORT_ID');
     this.exportSnapshot = null;
-    this.stopScrollInternal('SESSION_RESET');
-    this.assistedEver = false;
-    this.scrollPauseReason = null;
     return this.response(true);
+  }
+
+  async completeRollover(sessionId: string): Promise<CollectorResponse> {
+    if (this.state !== 'ROLLING_OVER' || this.sessionId !== sessionId) return this.response(false, 'STALE_ROLLOVER');
+    const completed = this.observations.length;
+    const partPromotionCounts = { ...this.promotionCounts };
+    const partAmbiguousCount = this.ambiguousCount;
+    const priorSessionId = this.sessionId;
+    const shouldScroll = this.resumeScrollAfterRollover;
+    const shouldStop = this.stopAfterRollover;
+    this.recentPartIdentities = new Set(this.observations.slice(-12).flatMap((item) =>
+      [item.platform_post_id, item.canonical_permalink].filter((value): value is string => typeof value === 'string' && !!value)));
+    this.detach();
+    this.resetSession();
+    this.completedCount += completed;
+    this.completedPromotionCounts.organic += partPromotionCounts.organic;
+    this.completedPromotionCounts.promoted += partPromotionCounts.promoted;
+    this.completedPromotionCounts.ambiguous += partPromotionCounts.ambiguous;
+    this.completedAmbiguousCount += partAmbiguousCount;
+    this.partNumber += 1;
+    this.state = shouldStop ? 'STOPPED' : 'CAPTURING';
+    this.sessionId = randomId('live-dom');
+    this.startedAt = Date.now();
+    this.event(shouldStop ? 'STOPPED_USER' : 'SESSION_CONTINUED', priorSessionId);
+    if (!shouldStop) {
+      this.attach();
+      this.durationTimer = window.setTimeout(() => this.limitStop('DURATION_LIMIT'), LIMITS.maxDurationSeconds * 1000);
+    } else this.stoppedAt = Date.now();
+    const saved = await this.persist();
+    this.rollingOver = false;
+    this.resumeScrollAfterRollover = false;
+    this.stopAfterRollover = false;
+    if (saved && shouldScroll && !shouldStop) this.startScroll();
+    return this.response(saved, saved ? undefined : 'SESSION_STORAGE_WRITE_FAILED');
+  }
+
+  private async rollover(reason: string): Promise<void> {
+    if (this.rollingOver || this.state !== 'CAPTURING' || !this.sessionId) return;
+    this.rollingOver = true;
+    this.resumeScrollAfterRollover = this.autoScroll;
+    this.state = 'ROLLING_OVER';
+    this.event('PART_ROLLOVER', reason);
+    this.detach();
+    const saved = await this.persist();
+    if (!saved) { this.rollingOver = false; return; }
+    try {
+      const reply = await browser.runtime.sendMessage({ type: 'XFI_AUTO_SAVE_EXPORT', clientId: this.clientId, sessionId: this.sessionId }) as { ok?: boolean; error?: string };
+      if (reply?.ok) return; // The background acknowledges only after a verified file completion.
+      this.stopCode = reply?.error || 'AUTO_EXPORT_FAILED';
+    } catch { this.stopCode = 'AUTO_EXPORT_FAILED'; }
+    this.rollingOver = false;
+    this.resumeScrollAfterRollover = false;
+    this.stopAfterRollover = false;
+    this.detach();
+    this.state = 'ERROR';
+    this.stoppedAt = Date.now();
+    this.event('AUTO_EXPORT_FAILED', this.stopCode);
+    void this.persist();
   }
 
   private response(ok: boolean, error?: string): CollectorResponse {
@@ -509,6 +610,7 @@ export class LiveCollector {
     this.ambiguousCount = 0;
     this.promotionCounts = { organic: 0, promoted: 0, ambiguous: 0 };
     this.observationBytes = 0;
+    this.rollingOver = false;
     this.assistedEver = false;
     this.autoScroll = false;
     this.scrollPauseReason = null;
@@ -596,6 +698,7 @@ export class LiveCollector {
     if (ratio < LIMITS.minimumVisibilityRatio || document.visibilityState !== 'visible') return;
     const parsed = parseCard(article);
     const identities = this.identityKeys(parsed);
+    if (identities.some((candidate) => this.recentPartIdentities.has(candidate))) return;
     const identity = identities[0]!;
     const signature = stableString({ identity, text: parsed.visibleText, author: parsed.handle, promotion: parsed.promotion, media: parsed.media, quote: parsed.quote, links: parsed.outboundLinks });
     const node = this.nodeKey(article);
@@ -661,14 +764,14 @@ export class LiveCollector {
         this.observationBytes = beforeBytes;
         this.promotionCounts = beforeCounts;
         this.events.length = beforeEvents;
-        return void this.limitStop('REFRESH_RECOVERY_LIMIT');
+        return void this.rollover('REFRESH_RECOVERY_LIMIT');
       }
       if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) this.hardStop('INJECTION_CONTENT');
       identities.forEach((candidate) => this.identityIndexes.set(candidate, existingIndex));
       this.persist();
       return;
     }
-    if (this.observations.length >= LIMITS.maxCandidates) return void this.limitStop('QUEUE_LIMIT');
+    if (this.observations.length >= LIMITS.maxCandidates) return void this.rollover('QUEUE_LIMIT');
 
     const appearance = this.observations.length;
     const observationId = `${this.sessionId}-observation-${String(appearance).padStart(3, '0')}`;
@@ -746,12 +849,12 @@ export class LiveCollector {
     };
     const nextBytes = this.observationBytes + byteLength(observation) + 1;
     // Reserve 1 MiB for session metadata, bounded events, digest and edits.
-    if (nextBytes > LIMITS.maxPacketBytes - 1_048_576) return void this.limitStop('PACKET_LIMIT');
+    if (nextBytes > LIMITS.maxPacketBytes - 1_048_576) return void (this.observations.length ? this.rollover('PACKET_LIMIT') : this.limitStop('PACKET_LIMIT'));
     // A refresh-safe snapshot is intentionally smaller than the export ceiling.
     // Reserve metadata headroom so the candidate is never accepted only to fail
     // its mandatory background persistence write afterwards.
     if (this.observationBytes + byteLength(observation) + 65_536 > LIMITS.maxRefreshRecoveryBytes) {
-      return void this.limitStop('REFRESH_RECOVERY_LIMIT');
+      return void (this.observations.length ? this.rollover('REFRESH_RECOVERY_LIMIT') : this.limitStop('REFRESH_RECOVERY_LIMIT'));
     }
     this.seenSignatures.set(node, signature);
     this.observations.push(observation);
@@ -765,7 +868,7 @@ export class LiveCollector {
 
     if (parsed.uncertaintyCodes.includes('PROMPT_INJECTION')) return void this.hardStop('INJECTION_CONTENT');
     if (this.ambiguousCount / this.observations.length > LIMITS.maxAmbiguityRatio && this.observations.length >= 20) return void this.hardStop('AMBIGUITY_LIMIT');
-    if (this.observations.length >= LIMITS.maxCandidates) this.limitStop('QUEUE_LIMIT');
+    if (this.observations.length >= LIMITS.maxCandidates) void this.rollover('QUEUE_LIMIT');
   }
 
   private visibilityChanged(): void {
@@ -804,85 +907,34 @@ export class LiveCollector {
 
 }
 
-class FloatingPanel {
+class CounterBubble {
   private readonly host = document.createElement('div');
-  private readonly status = document.createElement('p');
-  private readonly buttons = new Map<string, HTMLButtonElement>();
-  private timer: number | null = null;
-  private drag: { x: number; y: number; left: number; top: number } | null = null;
+  private readonly count: HTMLElement;
+  private readonly timer: number;
 
-  constructor(private readonly collector: LiveCollector, private readonly onClose: () => void) {
-    this.host.id = 'xfi-floating-panel-host';
-    this.host.setAttribute('data-xfi-panel', '');
+  constructor(private readonly collector: LiveCollector) {
+    this.host.id = 'xfi-counter-bubble';
+    this.host.setAttribute('data-xfi-counter', '');
+    const shadow = this.host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
-    style.textContent = `
-      #xfi-floating-panel-host { all: initial; } #xfi-floating-panel-host .xfi-panel { position: fixed; z-index: 2147483647; top: 76px; right: 20px; width: 286px; color: #e5edf9; background: #0b1220; border: 1px solid #3b4b65; border-radius: 12px; box-shadow: 0 12px 34px #0008; font: 13px/1.35 system-ui, sans-serif; }
-      #xfi-floating-panel-host header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #263247; cursor: move; user-select: none; } #xfi-floating-panel-host h2 { flex: 1; margin: 0; font-size: 14px; } #xfi-floating-panel-host p { margin: 0; } #xfi-floating-panel-host .status { padding: 9px 12px; color: #b8c5d9; } #xfi-floating-panel-host .counts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0 12px 10px; } #xfi-floating-panel-host .counts span { padding: 7px; border-radius: 7px; background: #172033; } #xfi-floating-panel-host .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 0 12px 12px; } #xfi-floating-panel-host button { min-height: 34px; color: #e5edf9; border: 1px solid #3b4b65; border-radius: 7px; background: #172033; font: 650 12px/1.2 inherit; cursor: pointer; } #xfi-floating-panel-host button:hover:not(:disabled) { border-color: #7dd3fc; } #xfi-floating-panel-host button:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; } #xfi-floating-panel-host button:disabled { opacity: .45; cursor: default; } #xfi-floating-panel-host .wide { grid-column: 1 / -1; } #xfi-floating-panel-host .danger { color: #fecaca; border-color: #7f1d1d; } #xfi-floating-panel-host .close { min-height: 27px; min-width: 27px; padding: 0; background: transparent; }
-    `;
-    const panel = document.createElement('section');
-    panel.className = 'panel'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'X Feed Intelligence controls'); panel.tabIndex = -1;
-    const header = document.createElement('header');
-    const title = document.createElement('h2'); title.textContent = 'X Feed Intelligence';
-    const close = this.button('close', 'Close panel', () => this.close()); close.className = 'close'; close.setAttribute('aria-label', 'Close X Feed Intelligence controls');
-    header.append(title, close);
-    this.status.className = 'status'; this.status.setAttribute('role', 'status'); this.status.setAttribute('aria-live', 'polite');
-    const counts = document.createElement('div'); counts.className = 'counts'; counts.setAttribute('aria-label', 'Collection counts');
-    for (const label of ['visible cards', 'organic', 'promoted', 'review']) { const item = document.createElement('span'); item.dataset.count = label; counts.append(item); }
-    const controls = document.createElement('div'); controls.className = 'controls'; controls.setAttribute('aria-label', 'Collection controls');
-    controls.append(
-      this.button('start', 'Start visible capture', async () => this.run(() => this.collector.start())),
-      this.button('stop', 'Stop', async () => this.run(() => this.collector.stop())),
-      this.button('scroll-start', 'Start careful auto-scroll', () => this.run(() => this.collector.startScroll())),
-      this.button('scroll-stop', 'Stop auto-scroll', () => this.run(() => this.collector.stopScroll())),
-      this.button('export', 'Export private JSON', () => this.export(), 'wide'),
-      this.button('discard', 'Discard session', async () => this.run(() => this.collector.discard()), 'wide danger'),
-    );
-    panel.append(header, this.status, counts, controls); this.host.append(style, panel); document.documentElement.append(this.host);
-    header.addEventListener('pointerdown', (event) => this.beginDrag(event, panel));
-    panel.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); this.close(); } });
-    this.refresh(); this.timer = window.setInterval(() => this.refresh(), 1000); panel.focus();
-  }
-
-  private button(id: string, label: string, action: () => void | Promise<void>, className = ''): HTMLButtonElement {
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.className = className; button.addEventListener('click', () => void action()); this.buttons.set(id, button); return button;
-  }
-
-  private async run(action: () => CollectorResponse | Promise<CollectorResponse>): Promise<void> {
-    const response = await action(); this.status.textContent = response.ok ? 'Updated.' : `Action blocked: ${response.error || 'unknown error'}`; this.refresh();
-  }
-
-  private async export(): Promise<void> {
-    try {
-      const reply = await browser.runtime.sendMessage({ type: 'XFI_PANEL_SAVE_EXPORT' }) as { ok?: boolean; sessionId?: string; error?: string };
-      this.status.textContent = reply?.ok ? `Save dialog opened for ${reply.sessionId}. Choose Documents.` : `Export blocked: ${reply?.error || 'unknown error'}`;
-    } catch { this.status.textContent = 'Export blocked: background unavailable.'; }
+    style.textContent = ':host { all: initial; position: fixed; z-index: 2147483647; top: 78px; right: 16px; pointer-events: none; } .bubble { display: inline-flex; align-items: baseline; gap: 5px; min-width: 60px; padding: 7px 10px; border: 1px solid #42718a; border-radius: 999px; background: #0b1220e8; box-shadow: 0 3px 12px #0007; color: #f1f8ff; font: 700 13px/1.1 system-ui, sans-serif; } small { color: #9bbed0; font: 600 10px/1 system-ui, sans-serif; }';
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    this.count = document.createElement('span');
+    const label = document.createElement('small'); label.textContent = 'cards';
+    bubble.append(this.count, label);
+    shadow.append(style, bubble);
+    document.documentElement.append(this.host);
     this.refresh();
+    this.timer = window.setInterval(() => this.refresh(), 1000);
+    window.addEventListener('pagehide', () => { window.clearInterval(this.timer); this.host.remove(); }, { once: true });
   }
 
   private refresh(): void {
-    const snapshot = this.collector.status();
-    const values = [snapshot.observationCount, snapshot.organicCount, snapshot.promotedCount, snapshot.ambiguousCount];
-    const nodes = (this.status.parentElement?.querySelectorAll<HTMLElement>('[data-count]') || []);
-    nodes.forEach((node, index) => { node.textContent = `${values[index]} ${node.dataset.count}`; });
-    if (!this.status.textContent || this.status.textContent === 'Updated.') this.status.textContent = `${snapshot.state.replace('_', ' ')} · ${snapshot.autoScroll ? 'careful auto-scroll on' : 'manual scroll'}`;
-    this.buttons.get('start')!.disabled = !['ARMED', 'STOPPED'].includes(snapshot.pendingState || snapshot.state);
-    this.buttons.get('stop')!.disabled = !['CAPTURING', 'PAUSED_HIDDEN'].includes(snapshot.pendingState || snapshot.state);
-    this.buttons.get('scroll-start')!.disabled = snapshot.state !== 'CAPTURING' || snapshot.autoScroll;
-    this.buttons.get('scroll-stop')!.disabled = !snapshot.autoScroll;
-    this.buttons.get('export')!.disabled = snapshot.observationCount === 0;
-    this.buttons.get('discard')!.disabled = snapshot.observationCount === 0 && !['ERROR', 'LIMIT_REACHED', 'STOPPED'].includes(snapshot.state);
+    const status = this.collector.status();
+    this.count.textContent = String(status.totalObservationCount);
+    this.host.setAttribute('aria-label', `${status.totalObservationCount} visible cards captured; ${status.state.toLowerCase().replace('_', ' ')}`);
   }
-
-  private beginDrag(event: PointerEvent, panel: HTMLElement): void {
-    if ((event.target as Element).closest('button')) return;
-    const bounds = panel.getBoundingClientRect(); this.drag = { x: event.clientX, y: event.clientY, left: bounds.left, top: bounds.top };
-    panel.setPointerCapture?.(event.pointerId);
-    const move = (next: PointerEvent) => { if (!this.drag) return; panel.style.right = 'auto'; panel.style.left = `${Math.max(4, Math.min(innerWidth - bounds.width - 4, this.drag.left + next.clientX - this.drag.x))}px`; panel.style.top = `${Math.max(4, Math.min(innerHeight - bounds.height - 4, this.drag.top + next.clientY - this.drag.y))}px`; };
-    const end = () => { this.drag = null; panel.removeEventListener('pointermove', move); panel.removeEventListener('pointerup', end); panel.removeEventListener('pointercancel', end); };
-    panel.addEventListener('pointermove', move); panel.addEventListener('pointerup', end); panel.addEventListener('pointercancel', end);
-  }
-
-  close(): void { if (this.timer !== null) window.clearInterval(this.timer); this.host.remove(); this.onClose(); }
 }
 
 export default defineContentScript({
@@ -892,7 +944,7 @@ export default defineContentScript({
   noScriptStartedPostMessage: true,
   main() {
     const collector = new LiveCollector();
-    let panel: FloatingPanel | null = null;
+    void collector.ready().then(() => { new CounterBubble(collector); });
     browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
       if (sender.id !== browser.runtime.id || !message || typeof message !== 'object' || !('type' in message)) return undefined;
       const command = message as CollectorCommand;
@@ -906,12 +958,8 @@ export default defineContentScript({
           case 'XFI_EXPORT': sendResponse(await collector.exportPacket()); break;
           case 'XFI_EXPORT_CHUNK': sendResponse(collector.exportChunk(command.exportId, command.index)); break;
           case 'XFI_EXPORT_RELEASE': sendResponse(collector.releaseExport(command.exportId)); break;
+          case 'XFI_ROLLOVER_COMPLETE': sendResponse(await collector.completeRollover(command.sessionId)); break;
           case 'XFI_DISCARD': sendResponse(await collector.discard()); break;
-          case 'XFI_PANEL_TOGGLE':
-            if (panel) { panel.close(); panel = null; }
-            else panel = new FloatingPanel(collector, () => { panel = null; });
-            sendResponse({ ok: true, status: collector.status(), panelOpen: panel !== null });
-            break;
           default: return;
         }
       }).catch(() => sendResponse({ ok: false, status: collector.status(), error: 'COLLECTOR_COMMAND_FAILED' }));

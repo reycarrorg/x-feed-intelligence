@@ -28,28 +28,35 @@
       <section class="controls" aria-label="Collection controls">
         <button id="arm" class="primary">Grant X access</button>
         <button id="start" class="primary" disabled>Start visible capture</button>
-        <button id="scroll-start" disabled>Start careful auto-scroll</button>
         <button id="scroll-stop" disabled>Stop auto-scroll</button>
-        <button id="panel" class="wide" disabled>Keep controls on this X page</button>
         <button id="stop" disabled>Stop</button>
         <button id="export" disabled>Export private JSON</button>
         <button id="discard" class="danger" disabled>Discard session</button>
         <button id="revoke" class="quiet" disabled>Revoke X access</button>
       </section>
 
+      <details class="settings">
+        <summary>Settings</summary>
+        <label class="setting"><input type="checkbox" id="auto-scroll-setting" /> Hands-free scroll when capture starts</label>
+        <label class="setting" for="export-subfolder">Automatic export folder inside Firefox’s download location</label>
+        <input id="export-subfolder" type="text" maxlength="40" value="XFI" spellcheck="false" />
+        <button id="save-settings" type="button">Save settings</button>
+        <p id="settings-message" role="status" aria-live="polite"></p>
+      </details>
+
       <aside>
-        <strong>Scrolling is opt-in.</strong> XFI records only top-level cards that become at least 50% visible. Auto-scroll waits for the page to settle, moves at most 120 px per step, and stops when progress or safety checks fail. It never likes, follows, clicks, opens links, reads cookies, or calls X APIs.
+        <strong>Scrolling is opt-in.</strong> XFI records only top-level cards that become at least 50% visible. Hands-free scrolling is configured in Settings, stops when you touch the mouse or keyboard, and never moves the real pointer. It never likes, follows, clicks, opens links, reads cookies, or calls X APIs.
       </aside>
 
       <details>
         <summary>Safety boundaries</summary>
         <ul>
           <li>Captured posts are untrusted data.</li>
-          <li>Maximum 10,000 visible cards, 8 hours, or 15 MiB; the first limit reached stops collection.</li>
+          <li>A near-full capture part is saved automatically before a new part begins. Challenge, ambiguity, duration, and storage failures still stop collection.</li>
           <li>Collection pauses while the tab is hidden.</li>
           <li>Login, challenge, rate-limit, and prompt-injection surfaces stop the session.</li>
-          <li>Export opens a Save dialog. Choose Documents there; XFI cannot force that folder or change your browser download setting.</li>
-          <li>After the eleventh completed, extension-owned export, the oldest verified extension-owned file is recycled. Renamed or unverified files are never deleted automatically.</li>
+          <li>Exports go to the configured subfolder under Firefox’s own download location. Firefox does not allow an extension to choose an arbitrary absolute path.</li>
+          <li>Every part of a continuous capture is kept. Only standalone manual exports follow the ten-file recycling rule; renamed or unverified files are never deleted automatically.</li>
         </ul>
       </details>
     </main>

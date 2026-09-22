@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   storageGet: vi.fn(),
   storageSet: vi.fn(),
   onChanged: vi.fn(),
+  settings: { autoScrollOnStart: false, exportSubfolder: 'XFI' },
 }));
 
 vi.mock('wxt/browser', () => ({
@@ -29,7 +30,7 @@ vi.mock('wxt/browser', () => ({
 }));
 
 const status = {
-  state: 'ARMED', observationCount: 0, organicCount: 0, promotedCount: 0,
+  state: 'ARMED', observationCount: 0, totalObservationCount: 0, partNumber: 1, organicCount: 0, promotedCount: 0,
   ambiguousCount: 0, hardStopCode: null, startedAt: null, elapsedSeconds: 0,
   autoScroll: false, scrollPauseReason: null, networkRequests: 0, accountActions: 0,
 };
@@ -50,8 +51,10 @@ beforeEach(() => {
     <button id="arm"></button><button id="start"></button>
     <button id="stop"></button><button id="export"></button>
     <button id="discard"></button><button id="revoke"></button>
-    <button id="scroll-start"></button><button id="scroll-stop"></button>
-    <button id="panel"></button>
+    <button id="scroll-stop"></button>
+    <input id="auto-scroll-setting" type="checkbox" />
+    <input id="export-subfolder" type="text" />
+    <button id="save-settings"></button><p id="settings-message"></p>
   `;
   mocks.getLastFocused.mockResolvedValue({ id: 42, type: 'normal' });
   mocks.getCurrent.mockResolvedValue({ id: 99, type: 'popup' });
@@ -111,7 +114,7 @@ describe('popup target tab', () => {
     expect(document.querySelector('#sidebar')).toBeNull();
     expect(mocks.getLastFocused).not.toHaveBeenCalled();
 
-    mocks.sendMessage.mockResolvedValue({ ok: true, status: { ...status, state: 'CAPTURING', observationCount: 123, organicCount: 100, promotedCount: 20, ambiguousCount: 3 } });
+    mocks.sendMessage.mockResolvedValue({ ok: true, status: { ...status, state: 'CAPTURING', observationCount: 123, totalObservationCount: 123, organicCount: 100, promotedCount: 20, ambiguousCount: 3 } });
     tick();
     await vi.waitFor(() => expect(document.querySelector('#total')?.textContent).toBe('123'));
     expect(document.querySelector('#organic')?.textContent).toBe('100');
@@ -119,25 +122,48 @@ describe('popup target tab', () => {
     expect(document.querySelector('#ambiguous')?.textContent).toBe('3');
   });
 
-  it('opens the explicit in-page controls from the confirmed X tab', async () => {
+  it('does not offer the removed in-page control panel', async () => {
     mocks.query.mockResolvedValue([{ id: 7 }]);
-    mocks.sendMessage.mockResolvedValue({ ok: true, status, panelOpen: true });
     await import('../entrypoints/popup/main');
-    await vi.waitFor(() => expect((document.querySelector('#panel') as HTMLButtonElement).disabled).toBe(false));
-    (document.querySelector('#panel') as HTMLButtonElement).click();
-    await vi.waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledWith(7, { type: 'XFI_PANEL_TOGGLE' }));
-    await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Controls are now on this X page'));
+    await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Ready.'));
+    expect(document.querySelector('#panel')).toBeNull();
+    expect(mocks.sendMessage).not.toHaveBeenCalledWith(7, { type: 'XFI_PANEL_TOGGLE' });
+  });
+
+  it('locks export and session-changing controls while an automatic part is being saved', async () => {
+    mocks.query.mockResolvedValue([{ id: 7 }]);
+    mocks.sendMessage.mockResolvedValue({ ok: true, status: { ...status, state: 'ROLLING_OVER', observationCount: 40, totalObservationCount: 300, partNumber: 2 } });
+    await import('../entrypoints/popup/main');
+    await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Saving part 2'));
+    expect((document.querySelector('#export') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.querySelector('#discard') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.querySelector('#revoke') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('hands export to the background without creating a popup-owned blob URL', async () => {
     mocks.query.mockResolvedValue([{ id: 7 }]);
-    mocks.sendMessage.mockResolvedValue({ ok: true, status: { ...status, observationCount: 2 } });
+    mocks.sendMessage.mockResolvedValue({ ok: true, status: { ...status, observationCount: 2, totalObservationCount: 2 } });
 
     await import('../entrypoints/popup/main');
     await vi.waitFor(() => expect(document.querySelector('#total')?.textContent).toBe('2'));
     (document.querySelector('#export') as HTMLButtonElement).click();
-    await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Save dialog opened'));
+    await vi.waitFor(() => expect(document.querySelector('#message')?.textContent).toContain('Export started'));
     expect(mocks.runtimeSend).toHaveBeenCalledWith({ type: 'XFI_SAVE_EXPORT', tabId: 7 });
     expect(mocks.download).not.toHaveBeenCalled();
+  });
+
+  it('loads and saves auto-scroll and a default export subfolder in popup settings', async () => {
+    mocks.query.mockResolvedValue([{ id: 7 }]);
+    mocks.storageGet.mockImplementation(async (key: string) => key === 'xfi_settings_v1'
+      ? { xfi_settings_v1: { autoScrollOnStart: true, exportSubfolder: 'Research' } } : {});
+    await import('../entrypoints/popup/main');
+    await vi.waitFor(() => expect((document.querySelector('#export-subfolder') as HTMLInputElement).value).toBe('Research'));
+    expect((document.querySelector('#auto-scroll-setting') as HTMLInputElement).checked).toBe(true);
+    (document.querySelector('#export-subfolder') as HTMLInputElement).value = 'XFI-Exports';
+    (document.querySelector('#save-settings') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(mocks.storageSet).toHaveBeenCalledWith({ xfi_settings_v1: { autoScrollOnStart: true, exportSubfolder: 'XFI-Exports' } }));
+    await vi.waitFor(() => expect(document.querySelector('#settings-message')?.textContent).toContain('Firefox'));
+    (document.querySelector('#start') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledWith(7, { type: 'XFI_SCROLL_START' }));
   });
 });

@@ -1,4 +1,4 @@
-export const COLLECTOR_VERSION = 'hybrid-extension-0.5.0';
+export const COLLECTOR_VERSION = 'hybrid-extension-0.6.0';
 export const PARSER_VERSION = 'visible-x-dom-0.4.0';
 export const EXACT_ORIGIN = 'https://x.com';
 
@@ -18,6 +18,7 @@ export type LifecycleState =
   | 'INACTIVE'
   | 'ARMED'
   | 'CAPTURING'
+  | 'ROLLING_OVER'
   | 'PAUSED_HIDDEN'
   | 'LIMIT_REACHED'
   | 'STOPPED'
@@ -33,6 +34,8 @@ export interface CollectorStatus {
   pendingChanges: boolean;
   pendingPersistenceFailure: boolean;
   observationCount: number;
+  totalObservationCount: number;
+  partNumber: number;
   organicCount: number;
   promotedCount: number;
   ambiguousCount: number;
@@ -60,6 +63,11 @@ export interface CollectorSessionSnapshot {
   ambiguousCount: number;
   promotionCounts: { organic: number; promoted: number; ambiguous: number };
   observationBytes: number;
+  completedCount?: number;
+  partNumber?: number;
+  completedPromotionCounts?: { organic: number; promoted: number; ambiguous: number };
+  completedAmbiguousCount?: number;
+  stopAfterRollover?: boolean;
   assistedEver: boolean;
   scrollPauseReason: string | null;
 }
@@ -73,14 +81,13 @@ export type CollectorCommand =
   | { type: 'XFI_EXPORT' }
   | { type: 'XFI_EXPORT_CHUNK'; exportId: string; index: number }
   | { type: 'XFI_EXPORT_RELEASE'; exportId: string }
-  | { type: 'XFI_DISCARD' }
-  | { type: 'XFI_PANEL_TOGGLE' };
+  | { type: 'XFI_ROLLOVER_COMPLETE'; sessionId: string }
+  | { type: 'XFI_DISCARD' };
 
 export interface CollectorResponse {
   ok: boolean;
   status: CollectorStatus;
   export?: { id: string; sessionId: string; chunkCount: number; totalBytes: number };
   chunk?: string;
-  panelOpen?: boolean;
   error?: string;
 }

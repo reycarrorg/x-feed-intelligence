@@ -1,9 +1,16 @@
 import { browser } from 'wxt/browser';
+import { getSettings } from './settings';
 
 const KEY = 'xfi_owned_exports_v1';
 export const MAX_OWNED_EXPORTS = 10;
-type Owned = { id: number; sequence: number; url: string; filename: string | null; state: 'pending' | 'complete' };
+type Owned = { id: number; sequence: number; url: string; filename: string | null; state: 'pending' | 'complete'; continuousPart?: true };
 type Ledger = { nextSequence: number; items: Owned[] };
+let pendingLedgerOperation: Promise<unknown> = Promise.resolve();
+function inLedgerOrder<T>(operation: () => Promise<T>): Promise<T> {
+  const result = pendingLedgerOperation.catch(() => undefined).then(operation);
+  pendingLedgerOperation = result.then(() => undefined, () => undefined);
+  return result;
+}
 
 async function read(): Promise<Ledger> {
   const value = (await browser.storage.local.get(KEY))[KEY] as Ledger | undefined;
@@ -26,7 +33,8 @@ async function exactItem(item: Owned): Promise<{ id: number; url: string; filena
 }
 
 /** Reconcile only IDs returned by our own downloads.download call. Never search by a broad filename. */
-export async function reconcileOwnedExports(): Promise<{ retained: number; warning: string | null }> {
+export function reconcileOwnedExports(): Promise<{ retained: number; warning: string | null }> {
+  return inLedgerOrder(async () => {
   const ledger = await read();
   let warning: string | null = null;
   for (const item of [...ledger.items]) {
@@ -44,7 +52,9 @@ export async function reconcileOwnedExports(): Promise<{ retained: number; warni
     }
   }
   // A new Save dialog may be cancelled. Delete nothing until an 11th owned file is complete.
-  let completed = ledger.items.filter((item) => item.state === 'complete').sort((a, b) => a.sequence - b.sequence);
+  // A continuous run must never lose its earliest part because a later part
+  // completed. Only standalone manual exports participate in the legacy cap.
+  let completed = ledger.items.filter((item) => item.state === 'complete' && !item.continuousPart).sort((a, b) => a.sequence - b.sequence);
   while (completed.length > MAX_OWNED_EXPORTS) {
     const oldest = completed[0]!;
     const found = await exactItem(oldest);
@@ -63,14 +73,18 @@ export async function reconcileOwnedExports(): Promise<{ retained: number; warni
   }
   await write(ledger);
   return { retained: completed.length, warning };
+  });
 }
 
-export async function startOwnedExport(url: string): Promise<{ id: number; sequence: number }> {
+export function startOwnedExport(url: string, continuousPart = false): Promise<{ id: number; sequence: number }> {
+  return inLedgerOrder(async () => {
   const ledger = await read();
   const sequence = ledger.nextSequence;
-  const id = await browser.downloads.download({ url, filename: expectedName(sequence), saveAs: true, conflictAction: 'uniquify' });
+  const settings = await getSettings();
+  const id = await browser.downloads.download({ url, filename: `${settings.exportSubfolder}/${expectedName(sequence)}`, saveAs: false, conflictAction: 'uniquify' });
   ledger.nextSequence += 1;
-  ledger.items.push({ id, sequence, url, filename: null, state: 'pending' });
+  ledger.items.push({ id, sequence, url, filename: null, state: 'pending', ...(continuousPart ? { continuousPart: true } : {}) });
   await write(ledger);
   return { id, sequence };
+  });
 }

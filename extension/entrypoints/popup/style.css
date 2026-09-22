@@ -33,3 +33,9 @@ aside strong { color: #edf3ff; }
 details { margin-top: 14px; color: #9cabc0; font-size: 12px; }
 summary { cursor: pointer; color: #cbd5e1; }
 ul { padding-left: 20px; line-height: 1.5; }
+.settings { margin-top: 14px; padding: 10px 12px; border: 1px solid #263247; border-radius: 10px; background: #111827cc; }
+.settings summary { font-weight: 700; }
+.setting { display: block; margin-top: 12px; color: #cbd5e1; line-height: 1.4; }
+.setting input[type="checkbox"] { margin-right: 6px; }
+#export-subfolder { display: block; width: 100%; margin: 6px 0 10px; padding: 8px; border: 1px solid #3b4b65; border-radius: 7px; background: #090d14; color: #edf3ff; }
+#settings-message { min-height: 1em; color: #9fb5ca; }

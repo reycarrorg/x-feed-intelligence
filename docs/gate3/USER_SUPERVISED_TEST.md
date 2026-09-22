@@ -6,7 +6,7 @@ This protocol defines full acceptance; the [September 16 limited Brave smoke tes
 
 1. Recheck current X terms, browser-extension policy, and account-enforcement risk from primary sources.
 2. Review the exact commit, dependency lock, generated manifest, build output, and third-party notices.
-3. Confirm the manifest has only `optional_host_permissions: ["https://x.com/*"]` plus `downloads` and `storage` for local Save As and verified retention. Chromium additionally needs `offscreen` to hold the export Blob while its transient popup closes. A narrow background context handles exports; it must make no X or external network requests. There is no always-on host permission.
+3. Confirm the manifest has only `optional_host_permissions: ["https://x.com/*"]` plus `downloads` and `storage` for local downloads and verified retention. Chromium additionally needs `offscreen` to hold the export Blob while its transient popup closes. A narrow background context handles exports; it must make no X or external network requests. There is no always-on host permission.
 4. Use a dedicated ordinary browser profile. The user performs login, MFA, consent, CAPTCHA, and recovery personally; credentials are never supplied to the extension or recorded in the repository.
 5. Prepare a simultaneous user-controlled screen recording if one-to-one recall measurement is desired.
 
@@ -15,9 +15,9 @@ This protocol defines full acceptance; the [September 16 limited Brave smoke tes
 1. Load the exact reviewed unpacked build.
 2. Open an ordinary `https://x.com` feed page and grant the exact optional site permission.
 3. Reload once if the browser requires it. Confirm the collector says ARMED and has collected zero posts.
-4. Press Start. For the first sample, scroll manually at an ordinary reading pace. In a separate bounded sample, use the popup's opt-in careful auto-scroll and verify it slows for loading cards, stops on no progress, and stops when the tab is hidden or a challenge appears. Do not use another automation tool.
+4. Press Start. For the first sample, scroll manually at an ordinary reading pace. In a separate bounded sample, enable careful auto-scroll in popup Settings and verify it slows for loading cards, stops when the mouse or keyboard is used, stops on no progress, and stops when the tab is hidden or a challenge appears. Do not use another automation tool.
 5. For the first supervised smoke test, stop after at most 100 visible candidate cards or 15 minutes, even though the new Firefox collector can hold up to 10,000 distinct visible cards for a longer manual session. Stop immediately on login, challenge, unusual-activity, rate-limit, permission drift, unexpected surface, or account warning.
-6. Export the private JSON once. Choose Documents in the browser Save dialog; the extension cannot force that folder. Validate it locally and compare it with the screen recording if captured. Separately test retention with synthetic exports before trusting automatic recycling of real files.
+6. Export the private JSON once to the configured subfolder under Firefox's download location; Firefox may still prompt if configured to ask for each download. The extension cannot force Documents unless the browser download location is set there. Validate it locally and compare it with the screen recording if captured. Separately test synthetic continuous rollover and standalone-export retention before relying on either with real data.
 7. Revoke X access and remove the unpacked extension after the test unless the user explicitly chooses to retain the reviewed build.
 
 ## Pass conditions
