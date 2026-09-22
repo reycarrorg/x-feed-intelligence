@@ -1,9 +1,9 @@
 # Windows Firefox development run
 
-> Historical Gate 3 test instructions. The current review build uses the
-> extension action popup and an explicitly opened in-page control panel; former
-> sidebar instructions do not apply. The current build has not yet been loaded
-> in the user's Firefox client.
+> Historical Windows launcher instructions. The current review build uses the
+> extension action popup for controls and a count-only bubble on the X page;
+> former sidebar and in-page control-panel instructions do not apply. The
+> current build has not yet completed an authenticated Firefox acceptance test.
 
 This is a local Gate 3 review build, not a signed Firefox release or a completed
 live-X acceptance test. It does not require Chrome or Brave. Firefox 140 or
@@ -56,20 +56,16 @@ separately grant X access and press **Start** before collection. Do not log in
 to X, grant access, or begin a live collection just to verify installation;
 follow [the user-supervised protocol](USER_SUPERVISED_TEST.md) when ready.
 
-The action popup has a **Keep controls on this X page** button. It opens an
-explicit, removable floating control panel inside the current X page; it is not
-a Firefox sidebar or an OS-level always-on-top window. Capture stays in the X
-tab if the panel closes, and the controls reappear only when you explicitly
-open them again. The review build can accumulate up to 10,000 distinct cards
-that each become at least 50% visible, with an 8-hour and 15-MiB safety ceiling
-(with a separate 9-MiB refresh-safe cap). Stop and export
-from the same X tab before reloading or closing it; a reload discards the
-in-memory session. Large JSON exports are transferred from the collector in
-bounded chunks and may take time. Export periodically during a long run if
-you want recoverable checkpoints; each export contains the session so far.
-The first live supervised test should still
-be small, as described in the protocol; 10,000-card live reliability is not
-yet proven.
+The action popup is the only control surface. A passive bubble on the X page
+shows the committed card count. Each capture part is bounded at 10,000 distinct
+cards, 8 hours, 15 MiB, and a tighter 9-MiB refresh-safe snapshot ceiling.
+Near the safe threshold, capture pauses, saves a verified part into the
+configured subfolder of Firefox's download location, then starts another part.
+Every continuous part is kept. Normal page refresh reconnects an active
+session, but closing the browser or refreshing during an active rollover is not
+promised to continue automatically; export the preserved packet if interrupted.
+The first live supervised test should still be small, as described in the
+protocol; long-session rollover reliability is not yet proven.
 
 For a local rebuild and static check from `extension/`:
 

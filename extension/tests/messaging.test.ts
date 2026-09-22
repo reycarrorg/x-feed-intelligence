@@ -33,15 +33,12 @@ it('responds to popup commands through the callback on Chromium and ignores othe
       error: 'NOTHING_TO_EXPORT',
     })));
 
-    respond.mockClear();
-    expect(listener({ type: 'XFI_PANEL_TOGGLE' }, { id: 'test-extension' }, respond)).toBe(true);
-    await vi.waitFor(() => expect(respond).toHaveBeenCalledWith(expect.objectContaining({ ok: true, panelOpen: true })));
-    expect(document.querySelector('#xfi-floating-panel-host')).not.toBeNull();
-
-    respond.mockClear();
-    expect(listener({ type: 'XFI_PANEL_TOGGLE' }, { id: 'test-extension' }, respond)).toBe(true);
-    await vi.waitFor(() => expect(respond).toHaveBeenCalledWith(expect.objectContaining({ ok: true, panelOpen: false })));
+    await vi.waitFor(() => expect(document.querySelector('#xfi-counter-bubble')).not.toBeNull());
     expect(document.querySelector('#xfi-floating-panel-host')).toBeNull();
+    respond.mockClear();
+    expect(listener({ type: 'XFI_PANEL_TOGGLE' }, { id: 'test-extension' }, respond)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(respond).not.toHaveBeenCalled();
   } finally {
     vi.unstubAllGlobals();
   }

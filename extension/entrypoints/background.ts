@@ -66,7 +66,18 @@ function releaseOwnedUrl(id: number): void {
   else URL.revokeObjectURL(url);
 }
 
-async function saveFromTab(tabId: number): Promise<SaveReply> {
+async function waitForDownload(id: number): Promise<void> {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const [item] = await browser.downloads.search({ id });
+    if (item?.state === 'complete' && item.filename) return;
+    if (item?.state === 'interrupted') throw new Error('DOWNLOAD_INTERRUPTED');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error('DOWNLOAD_NOT_VERIFIED');
+}
+
+async function saveFromTab(tabId: number, continuousPart = false, expectedSessionId?: string): Promise<SaveReply> {
   let exportId: string | null = null;
   let url: string | null = null;
   let runId: string | null = null;
@@ -75,6 +86,7 @@ async function saveFromTab(tabId: number): Promise<SaveReply> {
     const response = await collector(tabId, { type: 'XFI_EXPORT' });
     if (!response.ok || !response.export) throw new Error(response.error || 'EXPORT_FAILED');
     const { id, sessionId, chunkCount, totalBytes } = response.export;
+    if (expectedSessionId && expectedSessionId !== sessionId) throw new Error('STALE_ROLLOVER');
     exportId = id;
     if (!Number.isSafeInteger(totalBytes) || totalBytes < 1 || totalBytes + 1 > LIMITS.maxPacketBytes || chunkCount < 1 || chunkCount > 128) throw new Error('EXPORT_SIZE_MISMATCH');
     const useOffscreen = typeof window === 'undefined';
@@ -104,7 +116,7 @@ async function saveFromTab(tabId: number): Promise<SaveReply> {
     } else {
       url = URL.createObjectURL(new Blob([...parts, '\n'], { type: 'application/json' }));
     }
-    const started = await startOwnedExport(url);
+    const started = await startOwnedExport(url, continuousPart);
     ownedUrls.set(started.id, url);
     downloadStarted = true;
     // A small local packet can complete before the download() promise resolves.
@@ -112,7 +124,12 @@ async function saveFromTab(tabId: number): Promise<SaveReply> {
       const [item] = await browser.downloads.search({ id: started.id });
       if (item?.state === 'complete' || item?.state === 'interrupted') releaseOwnedUrl(started.id);
     } catch { /* The onChanged listener remains the other completion path. */ }
-    void reconcileOwnedExports();
+    if (continuousPart) {
+      await waitForDownload(started.id);
+      await reconcileOwnedExports();
+      const continued = await collector(tabId, { type: 'XFI_ROLLOVER_COMPLETE', sessionId });
+      if (!continued.ok) throw new Error(continued.error || 'ROLLOVER_NOT_CONFIRMED');
+    } else void reconcileOwnedExports();
     return { ok: true, sessionId };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'EXPORT_FAILED' };
@@ -132,6 +149,17 @@ export default defineBackground(() => {
       const tabId = sender.tab.id;
       const key = sessionKey(tabId);
       const clientId = (message as { clientId?: string }).clientId;
+      if (type === 'XFI_AUTO_SAVE_EXPORT') {
+        const expectedSessionId = (message as { sessionId?: string }).sessionId;
+        if (sender.url?.startsWith('https://x.com/') !== true || !expectedSessionId || typeof clientId !== 'string') return Promise.resolve({ ok: false, error: 'INVALID_AUTO_EXPORT' });
+        if (exportBusy) return Promise.resolve({ ok: false, error: 'EXPORT_BUSY' });
+        exportBusy = true;
+        return inSessionOrder(tabId, async () => {
+          const items = await browser.storage.session.get([key, ownerKey(tabId)]);
+          const snapshot = isSnapshot(items[key]) ? items[key] as CollectorSessionSnapshot : null;
+          return sessionOwner(items[ownerKey(tabId)])?.clientId === clientId && snapshot?.sessionId === expectedSessionId && snapshot.state === 'ROLLING_OVER';
+        }).then((verified) => verified ? saveFromTab(tabId, true, expectedSessionId) : { ok: false, error: 'STALE_ROLLOVER' }).finally(() => { exportBusy = false; });
+      }
       if (typeof type === 'string' && type.startsWith('XFI_SESSION_') && (typeof clientId !== 'string' || !clientId || clientId.length > 128)) return Promise.resolve({ ok: false, blocked: true, error: 'INVALID_SESSION_OWNER' });
       if (type === 'XFI_SESSION_READ') {
         const acceptedClientId = clientId as string;
@@ -216,12 +244,6 @@ export default defineBackground(() => {
           } catch { return { ok: false, error: 'SESSION_STORAGE_WRITE_FAILED' }; }
         });
       }
-    }
-    if (message && typeof message === 'object' && (message as { type?: string }).type === 'XFI_PANEL_SAVE_EXPORT') {
-      if (sender.id !== browser.runtime.id || sender.tab?.id == null || !sender.url?.startsWith('https://x.com/')) return undefined;
-      if (exportBusy) return Promise.resolve({ ok: false, error: 'EXPORT_BUSY' });
-      exportBusy = true;
-      return saveFromTab(sender.tab.id).finally(() => { exportBusy = false; });
     }
     if (!message || typeof message !== 'object' || !('type' in message) || (message as { type?: string }).type !== 'XFI_SAVE_EXPORT') return undefined;
     if (sender.id !== browser.runtime.id || sender.tab || sender.url !== browser.runtime.getURL('/popup.html')) return undefined;

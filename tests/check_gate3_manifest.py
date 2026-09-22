@@ -21,7 +21,7 @@ if not MANIFEST.is_file():
 
 manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 errors: list[str] = []
-if manifest.get("version") != "0.5.0":
+if manifest.get("version") != "0.6.0":
     errors.append("extension version drift")
 
 if manifest.get("manifest_version") != 3:
@@ -62,8 +62,10 @@ scripts = manifest.get("content_scripts", [])
 if len(scripts) != 1 or scripts[0].get("matches") != ["https://x.com/*"] or scripts[0].get("all_frames", False):
     errors.append("content script origin/frame boundary drift")
 content = (BUILD / scripts[0]["js"][0]).read_text(encoding="utf-8", errors="replace") if len(scripts) == 1 else ""
-if "xfi-lifecycle-indicator" in content or "attachShadow" in content:
-    errors.append("in-page collector UI is forbidden")
+if "xfi-counter-bubble" not in content or "data-xfi-counter" not in content:
+    errors.append("count-only in-page indicator missing")
+if "xfi-lifecycle-indicator" in content or "xfi-floating-panel" in content or "XFI_PANEL_TOGGLE" in content:
+    errors.append("interactive in-page controls are forbidden")
 
 bundle = "\n".join(
     path.read_text(encoding="utf-8", errors="replace")

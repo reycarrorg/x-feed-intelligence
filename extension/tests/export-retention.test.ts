@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  ledger: { nextSequence: 1, items: [] as Array<{ id: number; sequence: number; url: string; filename: string | null; state: string }> },
+  ledger: { nextSequence: 1, items: [] as Array<{ id: number; sequence: number; url: string; filename: string | null; state: string; continuousPart?: true }> },
   downloads: new Map<number, { id: number; url: string; filename: string; state: string }>(),
   download: vi.fn(), removeFile: vi.fn(),
 }));
@@ -26,6 +26,15 @@ beforeEach(() => {
 });
 
 describe('owned export retention', () => {
+  it('uses a relative configured subfolder and disables the Save As prompt', async () => {
+    const { startOwnedExport } = await import('../lib/export-retention');
+    mocks.download.mockResolvedValueOnce(90);
+    await startOwnedExport('blob:extension/manual');
+    expect(mocks.download).toHaveBeenCalledWith({
+      url: 'blob:extension/manual', filename: 'XFI/xfi-capture-0001.json', saveAs: false, conflictAction: 'uniquify',
+    });
+  });
+
   it('does not recycle an old file when the eleventh Save dialog is cancelled', async () => {
     const { startOwnedExport, reconcileOwnedExports } = await import('../lib/export-retention');
     for (let sequence = 1; sequence <= 10; sequence++) {
@@ -74,5 +83,20 @@ describe('owned export retention', () => {
     const result = await reconcileOwnedExports();
     expect(result.warning).toContain('remains on disk');
     expect(mocks.ledger.items).toHaveLength(11);
+  });
+
+  it('retains every completed part of a continuous session beyond the manual ten-file cap', async () => {
+    const { startOwnedExport, reconcileOwnedExports } = await import('../lib/export-retention');
+    for (let sequence = 1; sequence <= 12; sequence++) {
+      const id = 200 + sequence;
+      const url = `blob:extension/continuous/${sequence}`;
+      mocks.download.mockResolvedValueOnce(id);
+      await startOwnedExport(url, true);
+      mocks.downloads.set(id, { id, url, filename: `/Downloads/XFI/xfi-capture-${String(sequence).padStart(4, '0')}.json`, state: 'complete' });
+    }
+    await reconcileOwnedExports();
+    expect(mocks.removeFile).not.toHaveBeenCalled();
+    expect(mocks.ledger.items).toHaveLength(12);
+    expect(mocks.ledger.items.every((item) => item.continuousPart === true)).toBe(true);
   });
 });

@@ -195,7 +195,6 @@ class CapabilityBoundaryTests(unittest.TestCase):
         )
         forbidden = {
             "unbounded scroll call": r"\b(?:scrollTo|scrollIntoView)\s*\(",
-            "direct scroll mutation": r"\.scrollTop\s*=",
             "network fetch": r"\bfetch\s*\(",
             "XHR": r"\bXMLHttpRequest\b",
             "web socket": r"\bWebSocket\b",
@@ -206,7 +205,10 @@ class CapabilityBoundaryTests(unittest.TestCase):
         for label, pattern in forbidden.items():
             with self.subTest(label=label):
                 self.assertIsNone(re.search(pattern, sources, flags=re.IGNORECASE))
-        self.assertIn("Math.min(120", sources)
+        collector = (ROOT / "extension" / "entrypoints" / "collector.content.ts").read_text(encoding="utf-8")
+        self.assertEqual(1, len(re.findall(r"\.scrollTop\s*=", sources)))
+        self.assertIn("target.scrollTop = oldTop + step", collector)
+        self.assertIn("Math.min(160, Math.max(80", collector)
         self.assertIn("networkRequests: 0", sources)
         self.assertIn("accountActions: 0", sources)
 
@@ -219,7 +221,9 @@ class CapabilityBoundaryTests(unittest.TestCase):
         self.assertIn("matches: ['https://x.com/*']", collector)
         self.assertIn("'assisted_scroll' : 'manual_scroll'", collector)
         self.assertNotIn("xfi-lifecycle-indicator", collector)
-        self.assertNotIn("attachShadow", collector)
+        self.assertIn("this.host.attachShadow({ mode: 'closed' })", collector)
+        self.assertIn("this.host.id = 'xfi-counter-bubble'", collector)
+        self.assertNotIn("XFI_PANEL_TOGGLE", collector)
         popup = (ROOT / "extension" / "entrypoints" / "popup" / "main.ts").read_text(encoding="utf-8")
         self.assertNotIn("createObjectURL", popup)
         self.assertIn("XFI_SAVE_EXPORT", popup)
