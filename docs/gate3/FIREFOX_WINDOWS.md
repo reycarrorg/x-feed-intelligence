@@ -1,25 +1,31 @@
 # Windows Firefox development run
 
-> Historical Gate 3 test instructions. The 0.5.0 candidate uses only the extension action popup; the former sidebar instructions below do not apply to it. The new build has not yet been loaded in the user's Firefox client.
+> Historical Gate 3 test instructions. The current review build uses the
+> extension action popup and an explicitly opened in-page control panel; former
+> sidebar instructions do not apply. The current build has not yet been loaded
+> in the user's Firefox client.
 
 This is a local Gate 3 review build, not a signed Firefox release or a completed
 live-X acceptance test. It does not require Chrome or Brave. Firefox 140 or
 newer is required on desktop; the checked Windows PC has Firefox 156.
 
-From the Windows worktree, double-click `Start XFI Firefox.cmd`. The launcher
-uses the pinned `pnpm` lockfile with package scripts disabled, builds the
-Firefox Manifest V3 extension, and uses Mozilla `web-ext` 10.6.0 to
-install it temporarily in a **new Firefox profile**. It opens
-`about:debugging#/runtime/this-firefox`. Leave the launcher window open while
-using this temporary build. The normal Firefox profile, cookies, and X login
-are not copied. Closing the temporary Firefox session removes the add-on;
-double-click the launcher again to rebuild and relaunch it. The first launcher
-run may fetch this pinned test runner from npm; it is not shipped with the
-extension or the recording-only product package.
+Use the `X Feed Intelligence Firefox` shortcut on the current Windows Desktop,
+or double-click `Start XFI Firefox.cmd` in the worktree. The launcher rebuilds
+the Firefox Manifest V3 extension and uses the already cached Mozilla
+`web-ext` 10.6.0 runner to install it temporarily in a **new Firefox profile**.
+It opens `https://x.com/`, so no `about:debugging` step is required. Leave the
+launcher window open while using this temporary build. The normal Firefox
+profile, cookies, and X login are not copied or modified. Closing the temporary
+Firefox session removes the add-on; use the shortcut again to rebuild and
+relaunch it. The launcher deliberately does not download dependencies.
+
+Only one launcher session may run at a time. If it reports a stale launcher
+lock after both its temporary Firefox window and launcher have closed, remove
+`%TEMP%\xfi-firefox-launch.lock` and retry.
 
 If an older temporary XFI session is still open, export any unsaved capture
 before closing it. Rebuilding files on disk does not automatically reload that
-running add-on; launch a fresh temporary session to use version 0.4.0.
+running add-on; launch a fresh temporary session to use the current reviewed build.
 
 The Firefox manifest has one optional site permission, `https://x.com/*`, and
 no always-on host permission, background worker, or network API permission.
@@ -30,12 +36,13 @@ separately grant X access and press **Start** before collection. Do not log in
 to X, grant access, or begin a live collection just to verify installation;
 follow [the user-supervised protocol](USER_SUPERVISED_TEST.md) when ready.
 
-The popup has a **Keep open in Firefox sidebar** button. The sidebar remains
-beside the X tab while you scroll and refreshes its counts about once per
-second; it is not an OS-level always-on-top window. Capture stays in the X tab
-if you close the sidebar, but the counters reappear when you reopen it. The
-review build can accumulate up to 10,000 distinct cards that each become at
-least 50% visible, with an 8-hour and 128-MiB safety ceiling. Stop and export
+The action popup has a **Keep controls on this X page** button. It opens an
+explicit, removable floating control panel inside the current X page; it is not
+a Firefox sidebar or an OS-level always-on-top window. Capture stays in the X
+tab if the panel closes, and the controls reappear only when you explicitly
+open them again. The review build can accumulate up to 10,000 distinct cards
+that each become at least 50% visible, with an 8-hour and 15-MiB safety ceiling
+(with a separate 9-MiB refresh-safe cap). Stop and export
 from the same X tab before reloading or closing it; a reload discards the
 in-memory session. Large JSON exports are transferred from the collector in
 bounded chunks and may take time. Export periodically during a long run if
