@@ -31,6 +31,10 @@ Prompt in the worktree. If the launcher names a missing `pnpm.cmd`, restore the
 named runtime or install a supported Node and pnpm runtime; it does not install
 or download either automatically.
 
+To validate the exact `web-ext run` arguments without starting Firefox, run
+`Start XFI Firefox.cmd --argv-check`. This checks the pinned local runner's
+option parser after rebuilding the Firefox bundle.
+
 If an older temporary XFI session is still open, export any unsaved capture
 before closing it. Rebuilding files on disk does not automatically reload that
 running add-on; launch a fresh temporary session to use the current reviewed build.

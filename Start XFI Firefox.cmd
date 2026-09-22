@@ -5,6 +5,7 @@ set "XFI_LOCK=%TEMP%\xfi-firefox-launch.lock"
 set "XFI_PNPM="
 set "XFI_RUNTIME_NODE="
 if /i "%~1"=="--verify" set "XFI_VERIFY=1"
+if /i "%~1"=="--argv-check" set "XFI_ARGV_CHECK=1"
 if not exist "%XFI_FIREFOX%" (
   echo Firefox was not found at "%XFI_FIREFOX%".
   pause
@@ -57,10 +58,17 @@ if defined XFI_VERIFY (
   echo XFI launcher verification succeeded. Firefox was not started.
   goto cleanup
 )
+if defined XFI_ARGV_CHECK (
+  set "npm_config_offline=true"
+  call "%XFI_PNPM%" dlx web-ext@10.6.0 run --source-dir ".output\firefox-mv3" --firefox "%XFI_FIREFOX%" --no-reload --start-url "https://x.com/" --no-input --help
+  if errorlevel 1 goto failure
+  echo XFI launcher argument check succeeded. Firefox was not started.
+  goto cleanup
+)
 echo Starting a separate temporary Firefox profile with XFI. Your normal Firefox profile, cookies, and sessions are not used.
 echo X access remains off until you grant it, and capture remains off until you press Start.
 set "npm_config_offline=true"
-call "%XFI_PNPM%" dlx web-ext@10.6.0 run --source-dir ".output\firefox-mv3" --firefox "%XFI_FIREFOX%" --no-reload --start-url "https://x.com/" --no-input --boring
+call "%XFI_PNPM%" dlx web-ext@10.6.0 run --source-dir ".output\firefox-mv3" --firefox "%XFI_FIREFOX%" --no-reload --start-url "https://x.com/" --no-input
 if errorlevel 1 goto failure
 :cleanup
 rd "%XFI_LOCK%" >nul 2>nul
