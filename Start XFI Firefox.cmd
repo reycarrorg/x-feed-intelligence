@@ -2,14 +2,38 @@
 setlocal
 set "XFI_FIREFOX=%ProgramFiles%\Mozilla Firefox\firefox.exe"
 set "XFI_LOCK=%TEMP%\xfi-firefox-launch.lock"
+set "XFI_PNPM="
+set "XFI_RUNTIME_NODE="
+if /i "%~1"=="--verify" set "XFI_VERIFY=1"
 if not exist "%XFI_FIREFOX%" (
   echo Firefox was not found at "%XFI_FIREFOX%".
   pause
   exit /b 1
 )
-where pnpm >nul 2>nul
+for %%P in ("%LocalAppData%\pnpm\pnpm.cmd" "%AppData%\npm\pnpm.cmd" "%ProgramFiles%\nodejs\pnpm.cmd" "%ProgramFiles(x86)%\nodejs\pnpm.cmd") do if not defined XFI_PNPM if exist "%%~fP" set "XFI_PNPM=%%~fP"
+if not defined XFI_PNPM for /f "delims=" %%P in ('where pnpm 2^>nul') do if not defined XFI_PNPM set "XFI_PNPM=%%P"
+if not defined XFI_PNPM for /d %%R in ("%UserProfile%\.cache\codex-runtimes\*") do if not defined XFI_PNPM if exist "%%~fR\dependencies\bin\fallback\pnpm.cmd" if exist "%%~fR\dependencies\node\bin\node.exe" (
+  set "XFI_PNPM=%%~fR\dependencies\bin\fallback\pnpm.cmd"
+  set "XFI_RUNTIME_NODE=%%~fR\dependencies\node\bin"
+)
+if not defined XFI_PNPM (
+  echo pnpm was not found in the standard user or Node locations, PATH, or the existing Codex runtime cache.
+  echo Missing component: pnpm.cmd. Install a supported Node and pnpm runtime, or open Codex once to restore its managed runtime.
+  pause
+  exit /b 1
+)
+call "%XFI_PNPM%" --version >nul 2>nul
 if errorlevel 1 (
-  echo pnpm is not available on PATH. Open this reviewed worktree with its existing Node and pnpm setup, then try again.
+  echo pnpm was found but could not run: "%XFI_PNPM%"
+  echo Restore that runtime or install a supported Node and pnpm runtime, then try again.
+  pause
+  exit /b 1
+)
+if defined XFI_RUNTIME_NODE set "PATH=%XFI_RUNTIME_NODE%;%PATH%"
+where node >nul 2>nul
+if errorlevel 1 (
+  echo node.exe is unavailable for the pinned extension build after resolving pnpm: "%XFI_PNPM%"
+  echo Restore the matching Node runtime or install a supported Node and pnpm runtime, then try again.
   pause
   exit /b 1
 )
@@ -27,13 +51,18 @@ if not exist "node_modules\.bin\wxt.cmd" (
   echo This launcher does not download software. Restore the pinned dependencies, then try again.
   goto failure
 )
-call pnpm run build:firefox
+call "%XFI_PNPM%" run build:firefox
 if errorlevel 1 goto failure
+if defined XFI_VERIFY (
+  echo XFI launcher verification succeeded. Firefox was not started.
+  goto cleanup
+)
 echo Starting a separate temporary Firefox profile with XFI. Your normal Firefox profile, cookies, and sessions are not used.
 echo X access remains off until you grant it, and capture remains off until you press Start.
 set "npm_config_offline=true"
-call pnpm dlx web-ext@10.6.0 run --source-dir ".output\firefox-mv3" --firefox "%XFI_FIREFOX%" --no-reload --start-url "https://x.com/" --no-input --boring
+call "%XFI_PNPM%" dlx web-ext@10.6.0 run --source-dir ".output\firefox-mv3" --firefox "%XFI_FIREFOX%" --no-reload --start-url "https://x.com/" --no-input --boring
 if errorlevel 1 goto failure
+:cleanup
 rd "%XFI_LOCK%" >nul 2>nul
 exit /b 0
 :failure

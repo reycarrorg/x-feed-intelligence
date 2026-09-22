@@ -23,6 +23,14 @@ Only one launcher session may run at a time. If it reports a stale launcher
 lock after both its temporary Firefox window and launcher have closed, remove
 `%TEMP%\xfi-firefox-launch.lock` and retry.
 
+The launcher first looks for a normal user or system `pnpm` installation. On
+this Windows setup it can also discover the existing Codex-managed runtime
+without relying on Explorer's PATH. To rebuild and verify that resolution
+without starting Firefox, run `Start XFI Firefox.cmd --verify` from a Command
+Prompt in the worktree. If the launcher names a missing `pnpm.cmd`, restore the
+named runtime or install a supported Node and pnpm runtime; it does not install
+or download either automatically.
+
 If an older temporary XFI session is still open, export any unsaved capture
 before closing it. Rebuilding files on disk does not automatically reload that
 running add-on; launch a fresh temporary session to use the current reviewed build.
