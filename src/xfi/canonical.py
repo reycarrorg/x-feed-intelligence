@@ -134,20 +134,22 @@ def _semantic_tokens(observation: dict) -> tuple[tuple[str, ...], tuple[str, ...
 
 def has_merge_conflict(existing: list[dict], candidate: dict, method: str | None = None) -> bool:
     values = [*existing, candidate]
-    sets = [
-        {item.get("platform_post_id") for item in values if item.get("platform_post_id")},
-        {item["promotion"]["status"] for item in values},
-        {media_key(item) for item in values if item["media"]},
-        {_relationship_signature(item) for item in values},
-        {_semantic_tokens(item)[0] for item in values},
-        {_semantic_tokens(item)[1] for item in values},
-    ]
+
+    # ⚡ Bolt: Fast fail on cheap checks first to avoid unnecessary iteration
+    if len({item.get("platform_post_id") for item in values if item.get("platform_post_id")}) > 1: return True
+    if len({item["promotion"]["status"] for item in values}) > 1: return True
+    if len({media_key(item) for item in values if item["media"]}) > 1: return True
+    if len({_relationship_signature(item) for item in values}) > 1: return True
+
     if method != "platform_id":
-        sets.extend([
-            {primary_author(item) for item in values if primary_author(item)},
-            {item.get("displayed_timestamp") for item in values if item.get("displayed_timestamp")},
-        ])
-    return any(len(group) > 1 for group in sets)
+        if len({primary_author(item) for item in values if primary_author(item)}) > 1: return True
+        if len({item.get("displayed_timestamp") for item in values if item.get("displayed_timestamp")}) > 1: return True
+
+    # ⚡ Bolt: Defer expensive semantic token generation (regex) to the end
+    if len({_semantic_tokens(item)[0] for item in values}) > 1: return True
+    if len({_semantic_tokens(item)[1] for item in values}) > 1: return True
+
+    return False
 
 
 def levenshtein(left: str, right: str) -> int:
