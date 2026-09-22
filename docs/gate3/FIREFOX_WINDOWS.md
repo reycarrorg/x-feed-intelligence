@@ -19,6 +19,13 @@ profile, cookies, and X login are not copied or modified. Closing the temporary
 Firefox session removes the add-on; use the shortcut again to rebuild and
 relaunch it. The launcher deliberately does not download dependencies.
 
+The launcher uses only the installed **standard Firefox Release** application
+binary (on this PC, `C:\Program Files\Mozilla Firefox\firefox.exe`, Firefox
+156). It explicitly does not fall back to Firefox Developer Edition. This
+selects the normal Firefox application binary while `web-ext` still creates a
+separate temporary profile; it does not open, replace, or reuse the user's
+everyday Firefox profile or session.
+
 Only one launcher session may run at a time. If it reports a stale launcher
 lock after both its temporary Firefox window and launcher have closed, remove
 `%TEMP%\xfi-firefox-launch.lock` and retry.
@@ -33,7 +40,8 @@ or download either automatically.
 
 To validate the exact `web-ext run` arguments without starting Firefox, run
 `Start XFI Firefox.cmd --argv-check`. This checks the pinned local runner's
-option parser after rebuilding the Firefox bundle.
+option parser after rebuilding the Firefox bundle and reports the pinned
+standard Firefox Release binary it passed as `--firefox`.
 
 If an older temporary XFI session is still open, export any unsaved capture
 before closing it. Rebuilding files on disk does not automatically reload that

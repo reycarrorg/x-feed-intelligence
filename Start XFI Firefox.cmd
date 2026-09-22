@@ -1,13 +1,19 @@
 @echo off
 setlocal
-set "XFI_FIREFOX=%ProgramFiles%\Mozilla Firefox\firefox.exe"
+set "XFI_FIREFOX="
 set "XFI_LOCK=%TEMP%\xfi-firefox-launch.lock"
 set "XFI_PNPM="
 set "XFI_RUNTIME_NODE="
 if /i "%~1"=="--verify" set "XFI_VERIFY=1"
 if /i "%~1"=="--argv-check" set "XFI_ARGV_CHECK=1"
-if not exist "%XFI_FIREFOX%" (
-  echo Firefox was not found at "%XFI_FIREFOX%".
+rem Deliberately search only normal Firefox Release install locations. Do not
+rem substitute Firefox Developer Edition: the launcher promise is the standard client.
+for %%F in ("%ProgramW6432%\Mozilla Firefox\firefox.exe" "%ProgramFiles%\Mozilla Firefox\firefox.exe" "%ProgramFiles(x86)%\Mozilla Firefox\firefox.exe") do if not defined XFI_FIREFOX if exist "%%~fF" set "XFI_FIREFOX=%%~fF"
+if not defined XFI_FIREFOX (
+  echo Standard Firefox Release was not found in its normal Windows install locations.
+  echo Expected: "%ProgramFiles%\Mozilla Firefox\firefox.exe"
+  echo Firefox Developer Edition is deliberately not used as a fallback.
+  echo Install or restore standard Firefox Release, then try again.
   pause
   exit /b 1
 )
@@ -60,12 +66,14 @@ if defined XFI_VERIFY (
 )
 if defined XFI_ARGV_CHECK (
   set "npm_config_offline=true"
+  echo Validating web-ext arguments with standard Firefox Release: "%XFI_FIREFOX%"
   call "%XFI_PNPM%" dlx web-ext@10.6.0 run --source-dir ".output\firefox-mv3" --firefox "%XFI_FIREFOX%" --no-reload --start-url "https://x.com/" --no-input --help
   if errorlevel 1 goto failure
   echo XFI launcher argument check succeeded. Firefox was not started.
   goto cleanup
 )
-echo Starting a separate temporary Firefox profile with XFI. Your normal Firefox profile, cookies, and sessions are not used.
+echo Starting standard Firefox Release: "%XFI_FIREFOX%"
+echo XFI runs in a separate temporary Firefox profile. Your everyday profile, cookies, and sessions are not used.
 echo X access remains off until you grant it, and capture remains off until you press Start.
 set "npm_config_offline=true"
 call "%XFI_PNPM%" dlx web-ext@10.6.0 run --source-dir ".output\firefox-mv3" --firefox "%XFI_FIREFOX%" --no-reload --start-url "https://x.com/" --no-input
