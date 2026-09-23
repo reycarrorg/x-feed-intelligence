@@ -24,7 +24,9 @@ def pretty_bytes(value: object) -> bytes:
 
 
 def digest(value: dict, field: str = "content_digest") -> str:
-    clone = copy.deepcopy(value)
+    # ⚡ Bolt: shallow copy is 2x+ faster than deepcopy, which is
+    # sufficient since we only pop the top-level field before digestion.
+    clone = value.copy()
     clone.pop(field, None)
     return "sha256:" + hashlib.sha256(canonical_bytes(clone)).hexdigest()
 
