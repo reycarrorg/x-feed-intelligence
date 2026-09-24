@@ -1,0 +1,3 @@
+## 2025-02-12 - Missing hover affordances on native buttons
+**Learning:** Native `<button>` elements, especially in utilitarian/test pages, often lack pointer cursors and visual hover states by default. This makes them feel less interactive and unresponsive, even if they have focus states.
+**Action:** Always verify that interactive elements, including those in internal tools or test harnesses, have explicit hover styling (like `cursor: pointer` and visual feedback like `opacity` changes) to improve micro-interaction clarity.
