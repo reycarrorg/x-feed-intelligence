@@ -1,0 +1,3 @@
+## 2024-09-24 - O(N * M^2) Bottleneck in Deduplication Grouping
+**Learning:** The canonical deduplication logic in `src/xfi/canonical.py` frequently called `has_merge_conflict`. Because items in `existing` are accumulated iteratively, `existing` itself is a conflict-free set by definition. However, the original code iteratively rebuilt property sets dynamically across *all* existing items plus the candidate, resulting in highly redundant O(N * M^2) operations (where M is object size).
+**Action:** When adding candidates to conflict-free groups, optimize by checking the candidate solely against a representative member (e.g., `existing[0]`) for mandatory shared fields, and utilizing fast short-circuit loops over `existing` for optional or disparate fields.
