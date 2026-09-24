@@ -16,6 +16,10 @@ MAX_PACKET_BYTES = 5_242_880
 MAX_DEPTH = 64
 SENSITIVE_KEYS = re.compile(r"(?i)(authorization|auth[_-]?token|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|bearer|cookie|csrf|password|session[_-]?(?:token|storage)|local[_-]?storage|browser[_-]?profile|direct[_-]?messages?|notifications?|payment|har)")
 SECRET_VALUES = re.compile(r"(?i)(?:bearer\s+[a-z0-9._-]{12,}|-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----)")
+# Regex optimization for invalid Unicode surrogate detection.
+# Replaces slow python loop: any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+# Runs the search in highly-optimized C space for measurable performance gain on large strings.
+INVALID_UNICODE = re.compile("[\uD800-\uDFFF]")
 
 
 def _strict_object(pairs: list[tuple[str, object]]) -> dict:
@@ -37,7 +41,7 @@ def _has_invalid_unicode(value: object) -> bool:
     if isinstance(value, list):
         return any(_has_invalid_unicode(child) for child in value)
     if isinstance(value, str):
-        return any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+        return bool(INVALID_UNICODE.search(value))
     return False
 
 
