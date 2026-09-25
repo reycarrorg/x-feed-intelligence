@@ -151,14 +151,22 @@ def has_merge_conflict(existing: list[dict], candidate: dict, method: str | None
 
 
 def levenshtein(left: str, right: str) -> int:
+    """Calculates Levenshtein distance efficiently by avoiding min() and list.append()."""
     if len(left) < len(right):
         left, right = right, left
+    if not right:
+        return len(left)
     previous = list(range(len(right) + 1))
-    for i, lchar in enumerate(left, 1):
-        current = [i]
-        for j, rchar in enumerate(right, 1):
-            current.append(min(current[-1] + 1, previous[j] + 1, previous[j - 1] + (lchar != rchar)))
-        previous = current
+    current = [0] * (len(right) + 1)
+    for i, lchar in enumerate(left):
+        current[0] = i + 1
+        for j, rchar in enumerate(right):
+            ins = previous[j + 1] + 1
+            del_ = current[j] + 1
+            sub = previous[j] + (lchar != rchar)
+            m = ins if ins < del_ else del_
+            current[j + 1] = sub if sub < m else m
+        previous, current = current, previous
     return previous[-1]
 
 
