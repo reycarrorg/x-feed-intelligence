@@ -6,8 +6,10 @@
 <style>
   :root { color-scheme: light dark; font: 18px system-ui; }
   body { max-width: 42rem; margin: 2rem auto; padding: 1rem; }
-  button { min-width: 10rem; min-height: 3rem; margin: .4rem; font: inherit; }
-  button:focus { outline: .2rem solid currentColor; outline-offset: .15rem; }
+  button { min-width: 10rem; min-height: 3rem; margin: .4rem; font: inherit; cursor: pointer; transition: opacity 0.2s; }
+  button:hover { opacity: 0.8; }
+  button:focus-visible { outline: .2rem solid currentColor; outline-offset: .15rem; }
+  button:disabled { cursor: not-allowed; opacity: 0.5; }
   #state { border: .15rem solid currentColor; padding: 1rem; font-weight: 700; }
 </style>
 <h1>TEST ONLY — NON-DISTRIBUTABLE</h1>
