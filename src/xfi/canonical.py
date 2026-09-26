@@ -151,8 +151,30 @@ def has_merge_conflict(existing: list[dict], candidate: dict, method: str | None
 
 
 def levenshtein(left: str, right: str) -> int:
+    # ⚡ Bolt: Fast path for exact matches and optimization by trimming common prefixes/suffixes
+    # This reduces the O(n*m) distance calculation matrix size for typical temporal observations
+    if left == right:
+        return 0
     if len(left) < len(right):
         left, right = right, left
+
+    start = 0
+    while start < len(right) and left[start] == right[start]:
+        start += 1
+
+    end = 0
+    while end < len(right) - start and left[-(end + 1)] == right[-(end + 1)]:
+        end += 1
+
+    if start > 0 or end > 0:
+        if end > 0:
+            left, right = left[start:-end], right[start:-end]
+        else:
+            left, right = left[start:], right[start:]
+
+    if not right:
+        return len(left)
+
     previous = list(range(len(right) + 1))
     for i, lchar in enumerate(left, 1):
         current = [i]
