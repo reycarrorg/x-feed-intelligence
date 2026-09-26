@@ -6,7 +6,9 @@
 <style>
   :root { color-scheme: light dark; font: 18px system-ui; }
   body { max-width: 42rem; margin: 2rem auto; padding: 1rem; }
-  button { min-width: 10rem; min-height: 3rem; margin: .4rem; font: inherit; }
+  button { min-width: 10rem; min-height: 3rem; margin: .4rem; font: inherit; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
+  button:hover { opacity: 0.8; }
+  button:active { transform: scale(0.98); }
   button:focus { outline: .2rem solid currentColor; outline-offset: .15rem; }
   #state { border: .15rem solid currentColor; padding: 1rem; font-weight: 700; }
 </style>
