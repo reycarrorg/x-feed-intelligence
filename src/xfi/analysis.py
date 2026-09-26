@@ -73,6 +73,15 @@ def verification_record(*, verification_id: str, claim_summary: str, reason_code
 
 def aggregate_authors(posts: list[dict], analyses: list[dict]) -> list[dict]:
     analysis_by_post = {item["local_post_id"]: item for item in analyses}
+
+    # ⚡ Bolt: Pre-calculate promoted counts in O(n) instead of computing per-author in O(n^2)
+    promoted_counts: dict[str, int] = {}
+    for post in posts:
+        if post["promotion"]["status"] == "promoted":
+            for a in post["authors"]:
+                author_id = a["local_author_id"]
+                promoted_counts[author_id] = promoted_counts.get(author_id, 0) + 1
+
     grouped: dict[str, list[tuple[dict, dict]]] = {}
     for post in posts:
         analysis = analysis_by_post.get(post["local_post_id"])
@@ -90,7 +99,7 @@ def aggregate_authors(posts: list[dict], analyses: list[dict]) -> list[dict]:
         unsafe = any(item[1]["classification"] == "E_SCAM_MANIPULATIVE_UNSAFE" for item in items)
         blocking = any(any(u["severity"] == "blocking" for u in item[1]["uncertainty"]) for item in items)
         identity_conflict = any(any(u.get("code") == "IDENTITY_CONFLICT" for u in item[0]["uncertainty"]) for item in items)
-        promoted = sum(1 for post in posts if any(a["local_author_id"] == author_id for a in post["authors"]) and post["promotion"]["status"] == "promoted")
+        promoted = promoted_counts.get(author_id, 0)
         density = promoted / (promoted + len(items))
         allowed = len(items) >= 2 and credibility >= 3.0 and density < 0.5 and not identity_conflict and not unsafe and not blocking
         results.append({"author_local_id": author_id, "qualifying_original_post_count": len(items), "average_credibility": credibility, "promoted_density": density, "recommendation": "CONSIDER_FOLLOWING_AUTHOR" if allowed else "WATCHLIST_AUTHOR", "performed": False})
