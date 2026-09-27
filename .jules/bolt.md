@@ -1,0 +1,3 @@
+## 2024-05-24 - Short-circuiting iteration beats upfront set comprehensions
+**Learning:** Python set comprehensions over large structures inside `has_merge_conflict` (especially with regex-heavy tokenizers like `_semantic_tokens`) block early exits. The overhead of iterating and creating sets upfront for every item is significantly slower than doing simple checks first and bailing out as soon as a mismatch is found.
+**Action:** When validating constraints across a collection of objects, apply the fastest and most common rejection checks first, and use lazy iteration rather than generating all required data upfront.
