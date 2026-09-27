@@ -1,0 +1,3 @@
+## 2024-05-24 - Improve button focus/hover states
+**Learning:** By default, buttons get focus outline even on mouse clicks, which can be visually confusing. Also, missing hover states makes interaction feeling "dead". Using `:focus-visible` ensures outlines only for keyboard accessibility, and `opacity` handles hover nicely.
+**Action:** Use `:focus-visible` instead of `:focus` for outlines. Add `cursor: pointer` and `:hover` states to interactive elements.
