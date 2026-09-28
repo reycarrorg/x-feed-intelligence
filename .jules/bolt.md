@@ -1,0 +1,3 @@
+## 2026-09-28 - Eager Dictionary Allocation in Schema Validator
+**Learning:** The `SchemaValidator._type` function was eagerly evaluating all 7 type checks (including multiple `isinstance` calls) and allocating a dictionary on every single JSON schema validation step. This is a severe micro-bottleneck in Python because object allocation and function calls inside dictionary comprehensions/literals are expensive and cannot short-circuit.
+**Action:** Replace eager dictionary lookups with `if`/`elif` chains for hot-path type checking to allow early returns and eliminate unnecessary allocations. Also prefer `type(value) is str` over `isinstance(value, str)` when parsing JSON, as JSON parsers only emit base types, making `type()` checks both faster and safer.
