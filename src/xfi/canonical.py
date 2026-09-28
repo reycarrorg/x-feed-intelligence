@@ -125,10 +125,15 @@ def _semantic_tokens(observation: dict) -> tuple[tuple[str, ...], tuple[str, ...
         if value
     )
     structured.extend(["review required", observation["promotion"]["status"]])
+
+    # ⚡ Bolt: Fast-path substring check before triggering expensive regex substitution
+    text_lower = text.lower()
     for value in sorted(structured, key=len, reverse=True):
         normalized = normalized_text(value)
-        if normalized:
+        if normalized and normalized.lower() in text_lower:
             text = re.sub(r"(?<!\w)" + re.escape(normalized) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
+            text_lower = text.lower()
+
     return _tokens(normalized_text(text) or "")
 
 
