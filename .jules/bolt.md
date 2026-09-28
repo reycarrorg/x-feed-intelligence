@@ -1,0 +1,3 @@
+## 2024-11-26 - Optimized `_semantic_tokens` string replacement in `xfi.canonical`
+**Learning:** Successive `re.sub` calls with `re.escape` for overlapping or repeated words create huge performance overhead when normalizing tokens for `canonical.py`, especially for long arrays of `structured` text which might not even exist in the original text. A fast path that checks if the string exists using `lower() in lower()` before evaluating `re.sub` takes advantage of Python's very fast substring checking.
+**Action:** Implement the fast path check in `_semantic_tokens` where regex replacements are iterating through many potential tokens that likely don't exist in the text.
