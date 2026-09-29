@@ -97,13 +97,13 @@ class ValidatorTests(unittest.TestCase):
         dangling = copy.deepcopy(envelope)
         next(observation for observation in dangling["observations"] if observation["relationships"])["relationships"][0]["source_platform_post_id"] = "missing-platform-post"
         dangling["content_digest"] = digest(dangling)
-        with self.assertRaises(ValidationError) as missing: load_and_validate_envelope(canonical_bytes(dangling), SCHEMAS)
-        self.assertEqual("REJECTED_REFERENCE", missing.exception.code)
+        with self.assertRaises(ValidationError) as missing: canonicalize(dangling["observations"])
+        self.assertEqual("REJECTED_REFERENCE", missing.exception.args[0])
         contradictory = copy.deepcopy(envelope)
         next(observation for observation in contradictory["observations"] if observation["relationships"])["relationships"][0]["source_local_post_id"] = local_post_id("platform_id", "synthetic-post-300")
         contradictory["content_digest"] = digest(contradictory)
-        with self.assertRaises(ValidationError) as conflict: load_and_validate_envelope(canonical_bytes(contradictory), SCHEMAS)
-        self.assertEqual("REJECTED_REFERENCE", conflict.exception.code)
+        with self.assertRaises(ValidationError) as conflict: canonicalize(contradictory["observations"])
+        self.assertEqual("REJECTED_REFERENCE", conflict.exception.args[0])
         dangling_provenance = copy.deepcopy(envelope)
         next(observation for observation in dangling_provenance["observations"] if observation["media"])["media"][0]["provenance_ids"] = ["missing-provenance"]
         dangling_provenance["content_digest"] = digest(dangling_provenance)

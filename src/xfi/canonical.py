@@ -111,27 +111,25 @@ def _tokens(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 
 def _semantic_tokens(observation: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    if "_semantic_tokens_cache" not in observation:
-        text = normalized_text(observation.get("visible_text")) or ""
-        structured = [
-            value
-            for author in observation["authors"]
-            for value in (author.get("display_name"), author.get("handle"))
-            if value
-        ]
-        structured.extend(
-            value
-            for relationship in observation["relationships"]
-            for value in (relationship.get("source_platform_post_id"), relationship.get("source_local_post_id"))
-            if value
-        )
-        structured.extend(["review required", observation["promotion"]["status"]])
-        for value in sorted(structured, key=len, reverse=True):
-            normalized = normalized_text(value)
-            if normalized:
-                text = re.sub(r"(?<!\w)" + re.escape(normalized) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
-        observation["_semantic_tokens_cache"] = _tokens(normalized_text(text) or "")
-    return observation["_semantic_tokens_cache"]
+    text = normalized_text(observation.get("visible_text")) or ""
+    structured = [
+        value
+        for author in observation["authors"]
+        for value in (author.get("display_name"), author.get("handle"))
+        if value
+    ]
+    structured.extend(
+        value
+        for relationship in observation["relationships"]
+        for value in (relationship.get("source_platform_post_id"), relationship.get("source_local_post_id"))
+        if value
+    )
+    structured.extend(["review required", observation["promotion"]["status"]])
+    for value in sorted(structured, key=len, reverse=True):
+        normalized = normalized_text(value)
+        if normalized:
+            text = re.sub(r"(?<!\w)" + re.escape(normalized) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
+    return _tokens(normalized_text(text) or "")
 
 
 def has_merge_conflict(existing: list[dict], candidate: dict, method: str | None = None) -> bool:
