@@ -111,43 +111,48 @@ def _tokens(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 
 def _semantic_tokens(observation: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    text = normalized_text(observation.get("visible_text")) or ""
-    structured = [
-        value
-        for author in observation["authors"]
-        for value in (author.get("display_name"), author.get("handle"))
-        if value
-    ]
-    structured.extend(
-        value
-        for relationship in observation["relationships"]
-        for value in (relationship.get("source_platform_post_id"), relationship.get("source_local_post_id"))
-        if value
-    )
-    structured.extend(["review required", observation["promotion"]["status"]])
-    for value in sorted(structured, key=len, reverse=True):
-        normalized = normalized_text(value)
-        if normalized:
-            text = re.sub(r"(?<!\w)" + re.escape(normalized) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
-    return _tokens(normalized_text(text) or "")
+    if "_semantic_tokens_cache" not in observation:
+        text = normalized_text(observation.get("visible_text")) or ""
+        structured = [
+            value
+            for author in observation["authors"]
+            for value in (author.get("display_name"), author.get("handle"))
+            if value
+        ]
+        structured.extend(
+            value
+            for relationship in observation["relationships"]
+            for value in (relationship.get("source_platform_post_id"), relationship.get("source_local_post_id"))
+            if value
+        )
+        structured.extend(["review required", observation["promotion"]["status"]])
+        for value in sorted(structured, key=len, reverse=True):
+            normalized = normalized_text(value)
+            if normalized:
+                text = re.sub(r"(?<!\w)" + re.escape(normalized) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
+        observation["_semantic_tokens_cache"] = _tokens(normalized_text(text) or "")
+    return observation["_semantic_tokens_cache"]
 
 
 def has_merge_conflict(existing: list[dict], candidate: dict, method: str | None = None) -> bool:
     values = [*existing, candidate]
-    sets = [
-        {item.get("platform_post_id") for item in values if item.get("platform_post_id")},
-        {item["promotion"]["status"] for item in values},
-        {media_key(item) for item in values if item["media"]},
-        {_relationship_signature(item) for item in values},
-        {_semantic_tokens(item)[0] for item in values},
-        {_semantic_tokens(item)[1] for item in values},
-    ]
+
+    # Fast paths first to avoid expensive set comprehensions over all conditions
+    if len({item.get("platform_post_id") for item in values if item.get("platform_post_id")}) > 1: return True
+    if len({item["promotion"]["status"] for item in values}) > 1: return True
+    if len({media_key(item) for item in values if item["media"]}) > 1: return True
+    if len({_relationship_signature(item) for item in values}) > 1: return True
+
     if method != "platform_id":
-        sets.extend([
-            {primary_author(item) for item in values if primary_author(item)},
-            {item.get("displayed_timestamp") for item in values if item.get("displayed_timestamp")},
-        ])
-    return any(len(group) > 1 for group in sets)
+        if len({primary_author(item) for item in values if primary_author(item)}) > 1: return True
+        if len({item.get("displayed_timestamp") for item in values if item.get("displayed_timestamp")}) > 1: return True
+
+    # Calculate expensive semantic tokens last
+    tokens = [_semantic_tokens(item) for item in values]
+    if len({t[0] for t in tokens}) > 1: return True
+    if len({t[1] for t in tokens}) > 1: return True
+
+    return False
 
 
 def levenshtein(left: str, right: str) -> int:
