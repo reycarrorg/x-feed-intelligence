@@ -1,0 +1,6 @@
+## 2026-09-29 - [Optimization of `has_merge_conflict` and `_semantic_tokens`]
+**Learning:** Found two anti-patterns that significantly hit performance in tight loops (like deduplication index rebuilds):
+1. **Unconditional set evaluation**: `has_merge_conflict` calculated 8 expensive sets of conditions for conflict detection and evaluated them using `any()`. Since many items conflict early (e.g. different platforms or promotion status), early return avoids invoking the heaviest checks like `_semantic_tokens`.
+2. **Repeated string replacements**: `_semantic_tokens` ran a regular expression substitution (`re.sub`) for *each* item in `structured`. Recompiling and applying regexes sequentially scales poorly when the substitution pattern can just be combined with a regex pipe `|`.
+3. **Uncompiled regexes**: `re.findall` with inline patterns compiles the pattern every time. Pre-compiling to module-level regex objects avoids the overhead, especially when parsing small text continuously.
+**Action:** When identifying performance bottlenecks, check functions that compute multiple intermediate states unconditionally when they could fail-fast instead. Look for repeated `re.sub` that can be combined, and replace `re.findall(pattern, str)` with pre-compiled objects.

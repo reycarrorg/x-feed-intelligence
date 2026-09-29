@@ -13,6 +13,8 @@ from .errors import ValidationError
 
 NEGATIONS = {"no", "not", "never", "without"}
 
+DIGIT_RE = re.compile(r"\d+(?:\.\d+)?")
+WORD_RE = re.compile(r"[A-Za-z]+")
 
 def canonical_bytes(value: object, trailing_newline: bool = False) -> bytes:
     data = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
@@ -107,7 +109,7 @@ def _relationship_signature(observation: dict) -> tuple:
 
 
 def _tokens(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    return tuple(re.findall(r"\d+(?:\.\d+)?", text)), tuple(sorted(set(re.findall(r"[A-Za-z]+", text.lower())) & NEGATIONS))
+    return tuple(DIGIT_RE.findall(text)), tuple(sorted(set(WORD_RE.findall(text.lower())) & NEGATIONS))
 
 
 def _semantic_tokens(observation: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -125,29 +127,39 @@ def _semantic_tokens(observation: dict) -> tuple[tuple[str, ...], tuple[str, ...
         if value
     )
     structured.extend(["review required", observation["promotion"]["status"]])
-    for value in sorted(structured, key=len, reverse=True):
-        normalized = normalized_text(value)
-        if normalized:
-            text = re.sub(r"(?<!\w)" + re.escape(normalized) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
+
+    normalized_values = [normalized for value in structured if (normalized := normalized_text(value))]
+    if normalized_values:
+        normalized_values.sort(key=len, reverse=True)
+        escaped_values = [re.escape(val) for val in normalized_values]
+        pattern = r"(?<!\w)(" + "|".join(escaped_values) + r")(?!\w)"
+        text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
+
     return _tokens(normalized_text(text) or "")
 
 
 def has_merge_conflict(existing: list[dict], candidate: dict, method: str | None = None) -> bool:
     values = [*existing, candidate]
-    sets = [
-        {item.get("platform_post_id") for item in values if item.get("platform_post_id")},
-        {item["promotion"]["status"] for item in values},
-        {media_key(item) for item in values if item["media"]},
-        {_relationship_signature(item) for item in values},
-        {_semantic_tokens(item)[0] for item in values},
-        {_semantic_tokens(item)[1] for item in values},
-    ]
+
+    if len({item.get("platform_post_id") for item in values if item.get("platform_post_id")}) > 1:
+        return True
+    if len({item["promotion"]["status"] for item in values}) > 1:
+        return True
+    if len({media_key(item) for item in values if item["media"]}) > 1:
+        return True
+    if len({_relationship_signature(item) for item in values}) > 1:
+        return True
+
     if method != "platform_id":
-        sets.extend([
-            {primary_author(item) for item in values if primary_author(item)},
-            {item.get("displayed_timestamp") for item in values if item.get("displayed_timestamp")},
-        ])
-    return any(len(group) > 1 for group in sets)
+        if len({primary_author(item) for item in values if primary_author(item)}) > 1:
+            return True
+        if len({item.get("displayed_timestamp") for item in values if item.get("displayed_timestamp")}) > 1:
+            return True
+
+    sem_tokens = [_semantic_tokens(item) for item in values]
+    if len({t[0] for t in sem_tokens}) > 1:
+        return True
+    return len({t[1] for t in sem_tokens}) > 1
 
 
 def levenshtein(left: str, right: str) -> int:
