@@ -114,7 +114,21 @@ class SchemaValidator:
 
     @staticmethod
     def _type(value: object, expected: str) -> bool:
-        return {"null": value is None, "object": isinstance(value, dict), "array": isinstance(value, list), "string": isinstance(value, str), "boolean": isinstance(value, bool), "integer": isinstance(value, int) and not isinstance(value, bool), "number": isinstance(value, (int, float)) and not isinstance(value, bool)}[expected]
+        if expected == "string":
+            return type(value) is str
+        if expected == "object":
+            return type(value) is dict
+        if expected == "array":
+            return type(value) is list
+        if expected == "boolean":
+            return type(value) is bool
+        if expected == "null":
+            return value is None
+        if expected == "integer":
+            return type(value) is int
+        if expected == "number":
+            return type(value) in (int, float)
+        return False
 
     def validate(self, value: object, schema: dict, path: Path) -> None:
         try:
